@@ -1,30 +1,96 @@
 """
-Simple configuration for DocuShield hackathon demo
+Enhanced configuration for DocuShield Digital Twin Document Intelligence
 """
 import os
+from typing import Optional
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    # Database
-    tidb_host: str = os.getenv("TIDB_HOST", "localhost")
-    tidb_port: int = int(os.getenv("TIDB_PORT", "4000"))
-    tidb_user: str = os.getenv("TIDB_USER", "root")
-    tidb_password: str = os.getenv("TIDB_PASSWORD", "")
-    tidb_database: str = os.getenv("TIDB_DATABASE", "docushield")
+    # Multi-Cluster TiDB Configuration
+    # Cluster 1: Operational (real-time search + insights)
+    tidb_operational_host: str = os.getenv("TIDB_OPERATIONAL_HOST", "localhost")
+    tidb_operational_port: int = int(os.getenv("TIDB_OPERATIONAL_PORT", "4000"))
+    tidb_operational_user: str = os.getenv("TIDB_OPERATIONAL_USER", "root")
+    tidb_operational_password: str = os.getenv("TIDB_OPERATIONAL_PASSWORD", "")
+    tidb_operational_database: str = os.getenv("TIDB_OPERATIONAL_DATABASE", "docushield_ops")
+    
+    # Cluster 2: Sandbox (branching for what-if analysis)
+    tidb_sandbox_host: str = os.getenv("TIDB_SANDBOX_HOST", "localhost")
+    tidb_sandbox_port: int = int(os.getenv("TIDB_SANDBOX_PORT", "4001"))
+    tidb_sandbox_user: str = os.getenv("TIDB_SANDBOX_USER", "root")
+    tidb_sandbox_password: str = os.getenv("TIDB_SANDBOX_PASSWORD", "")
+    tidb_sandbox_database: str = os.getenv("TIDB_SANDBOX_DATABASE", "docushield_sandbox")
+    
+    # Cluster 3: Analytics (patterns, trends, simulations)
+    tidb_analytics_host: str = os.getenv("TIDB_ANALYTICS_HOST", "localhost")
+    tidb_analytics_port: int = int(os.getenv("TIDB_ANALYTICS_PORT", "4002"))
+    tidb_analytics_user: str = os.getenv("TIDB_ANALYTICS_USER", "root")
+    tidb_analytics_password: str = os.getenv("TIDB_ANALYTICS_PASSWORD", "")
+    tidb_analytics_database: str = os.getenv("TIDB_ANALYTICS_DATABASE", "docushield_analytics")
     
     @property
-    def database_url(self) -> str:
-        # SSL is handled in connect_args, not in URL
-        if self.tidb_password:
-            return f"mysql+pymysql://{self.tidb_user}:{self.tidb_password}@{self.tidb_host}:{self.tidb_port}/{self.tidb_database}"
-        return f"mysql+pymysql://{self.tidb_user}@{self.tidb_host}:{self.tidb_port}/{self.tidb_database}"
+    def operational_database_url(self) -> str:
+        if self.tidb_operational_password:
+            return f"mysql+pymysql://{self.tidb_operational_user}:{self.tidb_operational_password}@{self.tidb_operational_host}:{self.tidb_operational_port}/{self.tidb_operational_database}"
+        return f"mysql+pymysql://{self.tidb_operational_user}@{self.tidb_operational_host}:{self.tidb_operational_port}/{self.tidb_operational_database}"
     
-    # LLM APIs
+    @property
+    def sandbox_database_url(self) -> str:
+        if self.tidb_sandbox_password:
+            return f"mysql+pymysql://{self.tidb_sandbox_user}:{self.tidb_sandbox_password}@{self.tidb_sandbox_host}:{self.tidb_sandbox_port}/{self.tidb_sandbox_database}"
+        return f"mysql+pymysql://{self.tidb_sandbox_user}@{self.tidb_sandbox_host}:{self.tidb_sandbox_port}/{self.tidb_sandbox_database}"
+    
+    @property
+    def analytics_database_url(self) -> str:
+        if self.tidb_analytics_password:
+            return f"mysql+pymysql://{self.tidb_analytics_user}:{self.tidb_analytics_password}@{self.tidb_analytics_host}:{self.tidb_analytics_port}/{self.tidb_analytics_database}"
+        return f"mysql+pymysql://{self.tidb_analytics_user}@{self.tidb_analytics_host}:{self.tidb_analytics_port}/{self.tidb_analytics_database}"
+    
+
+    
+    # LLM Factory - Multi-provider API keys
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    
+    # LLM Factory settings
+    default_llm_provider: str = os.getenv("DEFAULT_LLM_PROVIDER", "openai")
+    default_embedding_provider: str = os.getenv("DEFAULT_EMBEDDING_PROVIDER", "openai")
+    llm_fallback_enabled: bool = os.getenv("LLM_FALLBACK_ENABLED", "true").lower() == "true"
+    llm_load_balancing: bool = os.getenv("LLM_LOAD_BALANCING", "false").lower() == "true"
+    
+    # Google Drive Integration
+    google_credentials_path: str = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+    google_token_path: str = os.getenv("GOOGLE_TOKEN_PATH", "token.json")
+    google_drive_folder_id: Optional[str] = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
+    
+    # External Integrations
+    slack_bot_token: str = os.getenv("SLACK_BOT_TOKEN", "")
+    slack_webhook_url: str = os.getenv("SLACK_WEBHOOK_URL", "")
+    sendgrid_api_key: str = os.getenv("SENDGRID_API_KEY", "")
+    alert_email_from: str = os.getenv("ALERT_EMAIL_FROM", "alerts@docushield.com")
+    alert_email_to: str = os.getenv("ALERT_EMAIL_TO", "")
+    
+    # Background Processing
+    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    celery_broker_url: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+    
+    # Risk Analysis Settings
+    risk_threshold_high: float = float(os.getenv("RISK_THRESHOLD_HIGH", "0.8"))
+    risk_threshold_medium: float = float(os.getenv("RISK_THRESHOLD_MEDIUM", "0.5"))
+    
+    # Document Processing
+    max_file_size_mb: int = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
+    supported_file_types: list = ["pdf", "docx", "txt", "md"]
+    
+    # Monitoring & Performance
+    enable_real_time_monitoring: bool = os.getenv("ENABLE_REAL_TIME_MONITORING", "true").lower() == "true"
+    monitoring_interval_minutes: int = int(os.getenv("MONITORING_INTERVAL_MINUTES", "5"))
     
     # App settings
     debug: bool = os.getenv("DEBUG", "false").lower() == "true"
+    environment: str = os.getenv("ENVIRONMENT", "development")
     
     class Config:
         env_file = ".env"
