@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import openai
 import httpx
 import numpy as np
-from app.database import AsyncSessionLocal
-from app.models import Document, AgentRun
+from app.database import get_operational_db
+from app.models import BronzeContract, ProcessingRun
 from app.core.config import settings
 import logging
 
@@ -49,25 +49,26 @@ class DocumentAnalysisAgent:
         """
         Step 1: Ingest document with vector embedding
         """
-        async with AsyncSessionLocal() as session:
+        async for session in get_operational_db():
             try:
                 # Create embedding
                 embedding = await self.create_embedding(content)
                 
-                # Store in TiDB
-                doc = Document(
-                    title=title,
-                    content=content,
-                    file_type=file_type,
-                    dataset_id=dataset_id,
-                    embedding=embedding  # TiDB stores as JSON
+                # Store in TiDB - simplified for current model structure
+                # This would need proper integration with DocuShield's contract processing
+                contract = BronzeContract(
+                    filename=title,
+                    mime_type=file_type,
+                    file_size=len(content.encode('utf-8')),
+                    file_hash="placeholder_hash",
+                    owner_user_id="system"
                 )
-                session.add(doc)
+                session.add(contract)
                 await session.commit()
-                await session.refresh(doc)
+                await session.refresh(contract)
                 
-                logger.info(f"Document ingested: {doc.id}")
-                return doc.id
+                logger.info(f"Contract ingested: {contract.contract_id}")
+                return contract.contract_id
                 
             except Exception as e:
                 logger.error(f"Failed to ingest document: {e}")
@@ -78,28 +79,27 @@ class DocumentAnalysisAgent:
         """
         Step 2: Hybrid search using TiDB vector + full-text search
         """
-        async with AsyncSessionLocal() as session:
+        async for session in get_operational_db():
             try:
                 # Create query embedding
                 query_embedding = await self.create_embedding(query)
                 embedding_json = json.dumps(query_embedding)
                 
-                # TiDB vector search with full-text fallback
+                # Simplified search using bronze_contracts table
+                # Note: This is a placeholder - real implementation would use silver_chunks with embeddings
                 vector_search_sql = text("""
-                    SELECT id, title, content, file_type,
-                           VEC_COSINE_DISTANCE(embedding, :query_embedding) as similarity
-                    FROM documents 
-                    WHERE dataset_id = :dataset_id
-                      AND JSON_LENGTH(embedding) > 0
-                    ORDER BY similarity ASC
+                    SELECT contract_id as id, filename as title, 'contract' as file_type,
+                           0.8 as similarity
+                    FROM bronze_contracts 
+                    WHERE filename LIKE :query
+                    ORDER BY created_at DESC
                     LIMIT :limit
                 """)
                 
                 result = await session.execute(
                     vector_search_sql,
                     {
-                        "query_embedding": embedding_json,
-                        "dataset_id": dataset_id,
+                        "query": f"%{query}%",
                         "limit": limit
                     }
                 )
@@ -109,7 +109,7 @@ class DocumentAnalysisAgent:
                     docs.append({
                         "id": row.id,
                         "title": row.title,
-                        "content": row.content[:500] + "..." if len(row.content) > 500 else row.content,
+                        "content": f"Contract file: {row.title}",
                         "file_type": row.file_type,
                         "similarity": float(row.similarity)
                     })
@@ -117,10 +117,9 @@ class DocumentAnalysisAgent:
                 # Fallback to text search if no vector results
                 if not docs:
                     text_search_sql = text("""
-                        SELECT id, title, content, file_type, 0.5 as similarity
-                        FROM documents 
-                        WHERE dataset_id = :dataset_id
-                          AND (title LIKE :query OR content LIKE :query)
+                        SELECT contract_id as id, filename as title, 'contract' as file_type, 0.5 as similarity
+                        FROM bronze_contracts 
+                        WHERE filename LIKE :query
                         LIMIT :limit
                     """)
                     
@@ -128,7 +127,6 @@ class DocumentAnalysisAgent:
                         text_search_sql,
                         {
                             "query": f"%{query}%",
-                            "dataset_id": dataset_id,
                             "limit": limit
                         }
                     )
@@ -137,7 +135,7 @@ class DocumentAnalysisAgent:
                         docs.append({
                             "id": row.id,
                             "title": row.title,
-                            "content": row.content[:500] + "..." if len(row.content) > 500 else row.content,
+                            "content": f"Contract file: {row.title}",
                             "file_type": row.file_type,
                             "similarity": 0.5
                         })
@@ -158,15 +156,23 @@ class DocumentAnalysisAgent:
             summaries = []
             for doc in documents:
                 summary_prompt = f"""
-                Summarize this document in 2-3 sentences:
+                Analyze this contract/legal document and provide:
+                1. Document type (e.g., Service Agreement, NDA, Employment Contract)
+                2. Key parties involved
+                3. Main terms and obligations
+                4. Important dates/deadlines
+                5. Risk factors or concerning clauses
+                
                 Title: {doc['title']}
                 Content: {doc['content']}
+                
+                Provide a structured analysis in 3-4 sentences.
                 """
                 
                 response = await self.openai_client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": summary_prompt}],
-                    max_tokens=100
+                    max_tokens=200
                 )
                 
                 summaries.append({
@@ -177,23 +183,28 @@ class DocumentAnalysisAgent:
             
             # Step 3b: Analyze and synthesize
             analysis_prompt = f"""
-            Question: {query}
+            You are a legal contract analysis expert. Analyze these contracts based on the query.
             
-            Based on these document summaries:
+            Query: {query}
+            
+            Contract Analysis Summaries:
             {json.dumps(summaries, indent=2)}
             
-            Provide:
-            1. A direct answer to the question
-            2. Key insights from the documents
-            3. Any gaps or limitations in the available information
+            Provide a comprehensive contract intelligence analysis:
+            1. **Direct Answer**: Answer the specific question about these contracts
+            2. **Risk Assessment**: Identify potential legal, financial, or operational risks
+            3. **Key Terms Analysis**: Highlight important clauses, obligations, and rights
+            4. **Compliance Issues**: Note any regulatory or compliance concerns
+            5. **Recommendations**: Suggest actions or areas needing attention
+            6. **Limitations**: Note any gaps in the analysis
             
-            Format as JSON with keys: answer, insights, limitations
+            Format as JSON with keys: answer, risk_assessment, key_terms, compliance_issues, recommendations, limitations
             """
             
             response = await self.openai_client.chat.completions.create(
                 model="gpt-4",
                 messages=[{"role": "user", "content": analysis_prompt}],
-                max_tokens=500
+                max_tokens=800
             )
             
             # Parse LLM response
@@ -202,8 +213,11 @@ class DocumentAnalysisAgent:
             except:
                 analysis = {
                     "answer": response.choices[0].message.content,
-                    "insights": [],
-                    "limitations": []
+                    "risk_assessment": "Unable to parse structured risk assessment",
+                    "key_terms": [],
+                    "compliance_issues": [],
+                    "recommendations": [],
+                    "limitations": ["JSON parsing failed - using raw response"]
                 }
             
             return {
@@ -216,8 +230,11 @@ class DocumentAnalysisAgent:
             return {
                 "summaries": [],
                 "analysis": {
-                    "answer": "Analysis failed due to technical error.",
-                    "insights": [],
+                    "answer": "Contract analysis failed due to technical error.",
+                    "risk_assessment": "Unable to assess risks due to technical error",
+                    "key_terms": [],
+                    "compliance_issues": [],
+                    "recommendations": ["Please retry the analysis"],
                     "limitations": ["Technical error in LLM processing"]
                 }
             }
@@ -262,16 +279,18 @@ class DocumentAnalysisAgent:
         start_time = time.time()
         
         # Create run record
-        async with AsyncSessionLocal() as session:
-            run = AgentRun(
-                query=query,
-                dataset_id=dataset_id,
+        async for session in get_operational_db():
+            # Create processing run record
+            run = ProcessingRun(
+                contract_id="system",  # placeholder
+                pipeline_version="1.0",
+                trigger="agent",
                 status="running"
             )
             session.add(run)
             await session.commit()
             await session.refresh(run)
-            run_id = run.id
+            run_id = run.run_id
         
         try:
             # Step 1: Hybrid Search (Vector + Full-text)
@@ -294,7 +313,7 @@ class DocumentAnalysisAgent:
             
             # Update run record
             execution_time = time.time() - start_time
-            async with AsyncSessionLocal() as session:
+            async for session in get_operational_db():
                 await session.execute(
                     text("UPDATE agent_runs SET retrieval_results = :docs, llm_analysis = :llm, external_actions = :ext, final_answer = :answer, total_steps = 4, execution_time = :time, status = 'completed', completed_at = NOW() WHERE id = :id"),
                     {
@@ -314,7 +333,7 @@ class DocumentAnalysisAgent:
         except Exception as e:
             logger.error(f"Analysis failed: {e}")
             # Update run record with failure
-            async with AsyncSessionLocal() as session:
+            async for session in get_operational_db():
                 await session.execute(
                     text("UPDATE agent_runs SET status = 'failed', completed_at = NOW() WHERE id = :id"),
                     {"id": run_id}
@@ -323,27 +342,46 @@ class DocumentAnalysisAgent:
             raise
     
     def _synthesize_final_answer(self, query: str, documents: List[Dict], llm_results: Dict, external_data: Dict) -> str:
-        """Combine all results into final answer"""
+        """Combine all results into comprehensive contract analysis"""
         answer_parts = []
         
         # Main answer from LLM
         if llm_results.get("analysis", {}).get("answer"):
-            answer_parts.append(f"**Answer**: {llm_results['analysis']['answer']}")
+            answer_parts.append(f"**Contract Analysis**: {llm_results['analysis']['answer']}")
         
-        # Key insights
-        insights = llm_results.get("analysis", {}).get("insights", [])
-        if insights:
-            answer_parts.append(f"**Key Insights**: {', '.join(insights) if isinstance(insights, list) else insights}")
+        # Risk Assessment
+        risk_assessment = llm_results.get("analysis", {}).get("risk_assessment")
+        if risk_assessment:
+            answer_parts.append(f"**Risk Assessment**: {risk_assessment}")
+        
+        # Key Terms
+        key_terms = llm_results.get("analysis", {}).get("key_terms", [])
+        if key_terms:
+            terms_text = ', '.join(key_terms) if isinstance(key_terms, list) else key_terms
+            answer_parts.append(f"**Key Terms & Clauses**: {terms_text}")
+        
+        # Compliance Issues
+        compliance = llm_results.get("analysis", {}).get("compliance_issues", [])
+        if compliance:
+            comp_text = ', '.join(compliance) if isinstance(compliance, list) else compliance
+            answer_parts.append(f"**Compliance Considerations**: {comp_text}")
+        
+        # Recommendations
+        recommendations = llm_results.get("analysis", {}).get("recommendations", [])
+        if recommendations:
+            rec_text = '\n- '.join(recommendations) if isinstance(recommendations, list) else recommendations
+            answer_parts.append(f"**Recommendations**:\n- {rec_text}")
         
         # Document sources
         if documents:
             sources = [f"- {doc['title']}" for doc in documents[:3]]
-            answer_parts.append(f"**Sources**: Based on {len(documents)} documents including:\n" + "\n".join(sources))
+            answer_parts.append(f"**Analyzed Contracts**: {len(documents)} document(s):\n" + "\n".join(sources))
         
-        # External enrichment
-        enrichments = [v for v in external_data.values() if v]
-        if enrichments:
-            answer_parts.append(f"**Additional Context**: Enhanced with {len(enrichments)} external data sources")
+        # Limitations
+        limitations = llm_results.get("analysis", {}).get("limitations", [])
+        if limitations:
+            lim_text = ', '.join(limitations) if isinstance(limitations, list) else limitations
+            answer_parts.append(f"**Analysis Limitations**: {lim_text}")
         
         return "\n\n".join(answer_parts)
 

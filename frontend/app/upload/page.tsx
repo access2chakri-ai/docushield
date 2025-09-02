@@ -1,13 +1,34 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
+interface User {
+  user_id: string;
+  email: string;
+  name: string;
+}
+
 export default function UploadPage() {
+  const [user, setUser] = useState<User | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    // Check authentication
+    const userData = localStorage.getItem('docushield_user');
+    if (!userData) {
+      router.push('/auth');
+      return;
+    }
+
+    const currentUser: User = JSON.parse(userData);
+    setUser(currentUser);
+  }, [router]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -19,7 +40,7 @@ export default function UploadPage() {
   };
 
   const handleUpload = async () => {
-    if (!file) return;
+    if (!file || !user) return;
 
     setIsUploading(true);
     setError(null);
@@ -27,15 +48,16 @@ export default function UploadPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('dataset_id', 'default');
+      formData.append('user_id', user.user_id);
 
-      const response = await fetch('/api/documents/upload', {
+      const response = await fetch('http://localhost:8000/api/documents/upload', {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(`Upload failed: ${errorData.detail || response.statusText}`);
       }
 
       const result = await response.json();
@@ -59,14 +81,24 @@ export default function UploadPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Upload Documents</h1>
-            <p className="text-gray-600 mt-2">Add documents to your knowledge base</p>
+            <p className="text-gray-600 mt-2">
+              {user ? `Welcome ${user.name}! Add documents to your knowledge base` : 'Add documents to your knowledge base'}
+            </p>
           </div>
-          <Link
-            href="/"
-            className="text-blue-600 hover:text-blue-800"
-          >
-            ← Back to Home
-          </Link>
+          <div className="flex items-center space-x-4">
+            <Link
+              href="/documents"
+              className="text-blue-600 hover:text-blue-800"
+            >
+              📄 My Documents
+            </Link>
+            <Link
+              href="/"
+              className="text-blue-600 hover:text-blue-800"
+            >
+              ← Back to Home
+            </Link>
+          </div>
         </div>
 
         <div className="bg-white rounded-lg shadow-lg p-8">
@@ -107,9 +139,9 @@ export default function UploadPage() {
             {/* Upload Button */}
             <button
               onClick={handleUpload}
-              disabled={!file || isUploading}
+              disabled={!file || !user || isUploading}
               className={`w-full py-3 px-4 rounded-lg font-medium ${
-                !file || isUploading
+                !file || !user || isUploading
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-blue-600 hover:bg-blue-700'
               } text-white`}
@@ -189,8 +221,14 @@ export default function UploadPage() {
           {uploadResult && (
             <div className="mt-6 flex space-x-4">
               <Link
-                href="/chat"
+                href="/documents"
                 className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700"
+              >
+                📄 View My Documents
+              </Link>
+              <Link
+                href="/chat"
+                className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700"
               >
                 💬 Start Asking Questions
               </Link>

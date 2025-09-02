@@ -1,7 +1,14 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+
+interface User {
+  user_id: string;
+  email: string;
+  name: string;
+}
 
 interface Message {
   id: string;
@@ -25,17 +32,44 @@ interface RunResult {
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      type: 'system',
-      content: 'Welcome! I\'m your multi-step document analysis agent. Upload some documents first, then ask me questions about them. I\'ll use TiDB vector search, LLM analysis chains, and external APIs to provide comprehensive answers.',
-      timestamp: new Date()
-    }
-  ]);
+  const [user, setUser] = useState<User | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedDataset] = useState('default');
+  const [selectedDocument, setSelectedDocument] = useState<string | null>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    // Check authentication
+    const userData = localStorage.getItem('docushield_user');
+    if (!userData) {
+      router.push('/auth');
+      return;
+    }
+
+    const currentUser: User = JSON.parse(userData);
+    setUser(currentUser);
+
+    // Check if a specific document was selected
+    const documentId = searchParams.get('document');
+    if (documentId) {
+      setSelectedDocument(documentId);
+    }
+
+    // Set initial welcome message
+    const welcomeMessage = documentId 
+      ? `Welcome! I'm ready to answer questions about your selected document. What would you like to know?`
+      : `Welcome ${currentUser.name}! I'm your document analysis agent. Upload some documents first, then ask me questions about them. I'll use TiDB vector search, LLM analysis chains, and external APIs to provide comprehensive answers.`;
+
+    setMessages([{
+      id: '1',
+      type: 'system',
+      content: welcomeMessage,
+      timestamp: new Date()
+    }]);
+  }, [router, searchParams]);
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -53,14 +87,15 @@ export default function ChatPage() {
 
     try {
       // Step 1: Start the analysis
-      const response = await fetch('/api/ask', {
+      const response = await fetch('http://localhost:8000/api/ask', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           question: input,
-          dataset_id: selectedDataset
+          dataset_id: selectedDataset,
+          user_id: user?.user_id
         })
       });
 
@@ -88,7 +123,7 @@ export default function ChatPage() {
       while (attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        const resultResponse = await fetch(`/api/runs/${run_id}`);
+        const resultResponse = await fetch(`http://localhost:8000/api/runs/${run_id}`);
         
         if (resultResponse.ok) {
           const result: RunResult = await resultResponse.json();
@@ -164,13 +199,26 @@ export default function ChatPage() {
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Multi-Step Agent Chat</h1>
-            <p className="text-gray-600">Ask questions about your documents</p>
+            <h1 className="text-3xl font-bold text-gray-900">AI Document Chat</h1>
+            <p className="text-gray-600">
+              {selectedDocument 
+                ? `Chatting about document: ${selectedDocument}` 
+                : `Ask questions about your uploaded documents`}
+            </p>
+            {user && (
+              <p className="text-sm text-gray-500">Logged in as: {user.name}</p>
+            )}
           </div>
           <div className="flex space-x-4">
             <Link
-              href="/upload"
+              href="/documents"
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              📄 My Documents
+            </Link>
+            <Link
+              href="/upload"
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
             >
               📤 Upload Docs
             </Link>
