@@ -1,0 +1,59 @@
+# Core FastAPI dependencies
+fastapi>=0.108.0
+uvicorn[standard]>=0.25.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+python-multipart>=0.0.9
+
+# TiDB Database (Multi-cluster support)
+sqlalchemy>=2.0.25
+pymysql>=1.1.0
+aiomysql>=0.2.0
+cryptography>=42.0.0
+
+# LLM Factory - Multi-provider support
+openai>=1.12.0
+anthropic>=0.18.0
+google-generativeai>=0.3.2
+groq>=0.4.1
+
+# Additional AI utilities
+tiktoken>=0.5.2
+transformers>=4.36.0
+
+# Document processing (Enhanced)
+PyPDF2>=3.0.1
+python-docx>=1.1.0
+pdfplumber>=0.10.0
+# textract>=1.6.5  # Commented out due to pip compatibility issues
+# Alternative document processing
+pypdf>=4.0.0
+docx2txt>=0.8
+
+# Google Drive integration
+google-api-python-client>=2.118.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.0
+
+# External integrations
+slack-sdk>=3.26.0
+sendgrid>=6.11.0
+
+# Background processing & scheduling
+celery>=5.3.0
+redis>=5.0.0
+apscheduler>=3.10.0
+
+# Risk analysis & ML
+scikit-learn>=1.4.0
+pandas>=2.2.0
+spacy>=3.7.0
+
+# HTTP client for external APIs
+httpx>=0.26.0
+aiohttp>=3.9.0
+
+# Utilities
+python-dotenv>=1.0.0
+numpy>=1.26.0
+python-json-logger>=2.0.7
