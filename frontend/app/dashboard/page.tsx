@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import ClaudeUsageStats from '../components/ClaudeUsageStats';
 
 interface ContractAnalysis {
   contract: {
@@ -57,8 +58,19 @@ export default function RiskDashboard() {
   const [selectedContract, setSelectedContract] = useState<ContractAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [user, setUser] = useState<{user_id: string; name: string; email: string} | null>(null);
 
   useEffect(() => {
+    // Initialize user from localStorage
+    const userData = localStorage.getItem('docushield_user');
+    if (userData) {
+      try {
+        setUser(JSON.parse(userData));
+      } catch (error) {
+        console.error('Failed to parse user data:', error);
+      }
+    }
+    
     fetchDashboardData();
     // Mock contract data for demo
     fetchMockContracts();
@@ -323,6 +335,11 @@ export default function RiskDashboard() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* AI Usage Stats */}
+        <div className="mb-8">
+          <ClaudeUsageStats userId={user?.user_id} />
         </div>
 
         {/* Contracts Grid */}

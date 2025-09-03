@@ -1,13 +1,12 @@
 """
 DocuShield - TiDB Hackathon Demo
-Simplified multi-step agentic document analysis
+Modular multi-step agentic document analysis
 """
 import uvicorn
-from app.api import app
 
 if __name__ == "__main__":
     uvicorn.run(
-        "app.api:app",
+        "app.main:app",  # Changed to use the new modular main.py
         host="0.0.0.0",
         port=8000,
         reload=True,

@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     enable_real_time_monitoring: bool = os.getenv("ENABLE_REAL_TIME_MONITORING", "true").lower() == "true"
     monitoring_interval_minutes: int = int(os.getenv("MONITORING_INTERVAL_MINUTES", "5"))
     
+    # Authentication settings
+    secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production-make-it-long-and-random")
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+    refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+    
     # App settings
     debug: bool = os.getenv("DEBUG", "false").lower() == "true"
     environment: str = os.getenv("ENVIRONMENT", "development")

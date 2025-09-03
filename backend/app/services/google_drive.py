@@ -17,7 +17,7 @@ from googleapiclient.errors import HttpError
 import httpx
 
 from app.core.config import settings
-from app.agents import agent
+from app.agents import agent_orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ class GoogleDriveService:
             logger.error(f"Error downloading document: {e}")
             return None
     
-    async def sync_documents(self, force_full_sync: bool = False) -> Dict[str, Any]:
+    async def sync_documents(self, user_id: str, force_full_sync: bool = False) -> Dict[str, Any]:
         """
         Sync documents from Google Drive to DocuShield
         """
@@ -231,13 +231,47 @@ class GoogleDriveService:
                         sync_results["skipped"] += 1
                         continue
                     
-                    # Ingest document using the agent
-                    doc_id = await agent.ingest_document(
-                        title=doc['name'],
-                        content=text_content,
-                        file_type=file_type,
-                        dataset_id="google_drive"
-                    )
+                    # Create contract record directly (similar to document upload)
+                    from app.models import BronzeContract, BronzeContractTextRaw
+                    from app.database import get_operational_db
+                    import hashlib
+                    import uuid
+                    
+                    # Calculate file hash
+                    content_bytes = text_content.encode('utf-8')
+                    file_hash = hashlib.sha256(content_bytes).hexdigest()
+                    
+                    async for db in get_operational_db():
+                        # Create bronze contract
+                        contract = BronzeContract(
+                            filename=doc['name'],
+                            mime_type=mime_type,
+                            file_size=len(content_bytes),
+                            file_hash=file_hash,
+                            raw_bytes=content_bytes,
+                            owner_user_id=user_id,
+                            source="google_drive",
+                            source_metadata={
+                                "google_drive_id": doc['id'],
+                                "modified_time": doc.get('modifiedTime'),
+                                "web_view_link": doc.get('webViewLink')
+                            },
+                            status="uploaded"
+                        )
+                        db.add(contract)
+                        await db.flush()
+                        
+                        # Create text raw record
+                        text_raw = BronzeContractTextRaw(
+                            contract_id=contract.contract_id,
+                            raw_text=text_content,
+                            extraction_method="google_drive_api",
+                            extraction_confidence=1.0
+                        )
+                        db.add(text_raw)
+                        await db.commit()
+                        
+                        doc_id = contract.contract_id
                     
                     sync_results["processed"] += 1
                     sync_results["new_documents"].append({
