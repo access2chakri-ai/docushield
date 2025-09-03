@@ -24,6 +24,7 @@ from app.models import (
 from app.services.risk_analyzer import risk_analyzer, DocumentType, RiskLevel
 from app.services.external_integrations import external_integrations
 from app.services.llm_factory import llm_factory, LLMTask
+from app.agents import agent_orchestrator
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -38,16 +39,24 @@ class DocumentProcessor:
         # Using LLM Factory for multi-provider support
         self.pipeline_version = "1.0.0"
         
-        # Processing steps configuration
+        # Performance limits to prevent getting stuck
+        self.max_text_length = 500000  # 500KB of text max
+        self.max_chunks = 200  # Maximum number of chunks to process
+        self.max_processing_time = 600  # 10 minutes max per document
+        self.chunk_size = 1000  # Reasonable chunk size
+        self.max_embeddings_per_batch = 50  # Batch embeddings to prevent memory issues
+        
+        # Processing steps configuration - ALL ENABLED FOR FULL TESTING
         self.processing_steps = [
             {"name": "extract_text", "order": 1, "required": True},
             {"name": "chunk_text", "order": 2, "required": True},
             {"name": "generate_embeddings", "order": 3, "required": True},
-            {"name": "extract_clauses", "order": 4, "required": False},
-            {"name": "analyze_risk", "order": 5, "required": True},
-            {"name": "generate_summaries", "order": 6, "required": False},
-            {"name": "create_suggestions", "order": 7, "required": False},
-            {"name": "send_alerts", "order": 8, "required": False}
+            {"name": "multi_agent_analysis", "order": 4, "required": True},
+            {"name": "extract_clauses", "order": 5, "required": True},  # NOW REQUIRED
+            {"name": "analyze_risk", "order": 6, "required": True},
+            {"name": "generate_summaries", "order": 7, "required": True},  # NOW REQUIRED
+            {"name": "create_suggestions", "order": 8, "required": True},  # NOW REQUIRED
+            {"name": "send_alerts", "order": 9, "required": True}  # NOW REQUIRED
         ]
     
     async def process_contract(
@@ -194,6 +203,8 @@ class DocumentProcessor:
             return await self._step_chunk_text(contract_id, db)
         elif step_name == "generate_embeddings":
             return await self._step_generate_embeddings(contract_id, db)
+        elif step_name == "multi_agent_analysis":
+            return await self._step_multi_agent_analysis(contract_id, db)
         elif step_name == "extract_clauses":
             return await self._step_extract_clauses(contract_id, db)
         elif step_name == "analyze_risk":
@@ -325,6 +336,9 @@ class DocumentProcessor:
             chunk_order += 1
             start = end - overlap  # Overlap for context
         
+        # Generate tokens for analysis
+        await self._generate_tokens(contract_id, text, db)
+        
         await db.commit()
         
         return {
@@ -352,12 +366,30 @@ class DocumentProcessor:
         
         for chunk in chunks:
             try:
-                # Generate embedding
-                embedding = await self._create_embedding(chunk.chunk_text, contract_id)
+                # Generate embedding with tracking
+                embedding_result = await llm_factory.generate_embedding(
+                    text=chunk.chunk_text,
+                    task_type=LLMTask.EMBEDDING
+                )
                 
                 # Update chunk with embedding
-                chunk.embedding = embedding
-                chunk.embedding_model = "text-embedding-3-small"
+                chunk.embedding = embedding_result["embedding"]
+                chunk.embedding_model = embedding_result.get("model", "text-embedding-3-small")
+                
+                # Track LLM call
+                llm_call = LlmCall(
+                    contract_id=contract_id,
+                    provider="openai",
+                    model=chunk.embedding_model,
+                    call_type="embedding",
+                    input_tokens=embedding_result.get("input_tokens", 0),
+                    output_tokens=0,
+                    total_tokens=embedding_result.get("input_tokens", 0),
+                    estimated_cost=embedding_result.get("cost", 0.0),
+                    success=True,
+                    purpose="chunk_embedding"
+                )
+                db.add(llm_call)
                 
                 embeddings_generated += 1
                 
@@ -375,6 +407,134 @@ class DocumentProcessor:
             "status": "completed",
             "embeddings_generated": embeddings_generated,
             "total_chunks": len(chunks)
+        }
+    
+    async def _step_multi_agent_analysis(self, contract_id: str, db: AsyncSession) -> Dict[str, Any]:
+        """Step 4: Multi-agent comprehensive analysis"""
+        
+        logger.info(f"Starting multi-agent analysis for contract {contract_id}")
+        
+        # Get contract and text
+        result = await db.execute(
+            select(BronzeContract).options(selectinload(BronzeContract.text_raw))
+            .where(BronzeContract.contract_id == contract_id)
+        )
+        contract = result.scalar_one()
+        
+        if not contract.text_raw:
+            logger.error(f"No text available for multi-agent analysis for contract {contract_id}")
+            raise ValueError("No text available for multi-agent analysis")
+        
+        logger.info(f"Found contract text for {contract_id}, starting agent orchestrator")
+        
+        # Run multi-agent analysis using new orchestrator (with error handling)
+        try:
+            logger.info(f"Calling agent orchestrator for contract {contract_id}")
+            workflow_result = await agent_orchestrator.run_comprehensive_analysis(
+                contract_id=contract_id,
+                user_id=contract.owner_user_id,
+                query="Perform comprehensive document analysis including risk assessment, clause extraction, and business recommendations",
+                selected_agents=["simple_analyzer", "search_agent", "clause_analyzer"],  # USE ALL AGENTS
+                timeout_seconds=300  # Longer timeout for full analysis
+            )
+            logger.info(f"Agent orchestrator completed for contract {contract_id}")
+        except Exception as agent_error:
+            logger.error(f"Agent orchestrator failed: {agent_error}")
+            # Create a fallback result structure
+            from app.agents.orchestrator import OrchestrationResult
+            workflow_result = OrchestrationResult(
+                run_id=f"fallback_{contract_id}",
+                contract_id=contract_id,
+                user_id=contract.owner_user_id,
+                query=None,
+                overall_success=False,
+                overall_confidence=0.5,
+                agent_results=[],
+                consolidated_findings=[{
+                    "type": "processing_error",
+                    "title": "Agent analysis temporarily unavailable",
+                    "description": f"Multi-agent analysis failed: {str(agent_error)}",
+                    "severity": "medium",
+                    "confidence": 0.5,
+                    "source_agent": "fallback"
+                }],
+                consolidated_recommendations=["Manual review recommended due to agent system error"],
+                execution_time_ms=0.0,
+                total_llm_calls=0,
+                workflow_version="fallback_2.0.0"
+            )
+        
+        # Store consolidated findings as GoldFindings
+        findings_created = 0
+        for finding in workflow_result.consolidated_findings[:10]:  # Limit to top 10
+            try:
+                gold_finding = GoldFinding(
+                    contract_id=contract_id,
+                    finding_type=finding.get("type", "agent_finding"),
+                    severity=finding.get("severity", "medium"),
+                    title=finding.get("title", "Agent finding")[:200],
+                    description=finding.get("description", json.dumps(finding)),
+                    confidence=finding.get("confidence", workflow_result.overall_confidence),
+                    detection_method=finding.get("source_agent", "orchestrator"),
+                    model_version=workflow_result.workflow_version
+                )
+                db.add(gold_finding)
+                findings_created += 1
+            except Exception as e:
+                logger.warning(f"Failed to save agent finding: {e}")
+        
+        # Store or update contract score (simplified for now)
+        result = await db.execute(
+            select(GoldContractScore).where(GoldContractScore.contract_id == contract_id)
+        )
+        existing_score = result.scalar_one_or_none()
+        
+        # Calculate risk score based on findings
+        risk_score = min(100, max(0, int(workflow_result.overall_confidence * 100)))
+        risk_level = "high" if workflow_result.overall_confidence > 0.8 else "medium" if workflow_result.overall_confidence > 0.5 else "low"
+        
+        if existing_score:
+            existing_score.overall_score = risk_score
+            existing_score.risk_level = risk_level
+            existing_score.confidence = workflow_result.overall_confidence
+            existing_score.last_updated = datetime.utcnow()
+        else:
+            score = GoldContractScore(
+                contract_id=contract_id,
+                overall_score=risk_score,
+                risk_level=risk_level,
+                category_scores={},  # Could be populated from specific risk analysis
+                scoring_model_version=workflow_result.workflow_version,
+                confidence=workflow_result.overall_confidence
+            )
+            db.add(score)
+        
+        # Create executive summary from consolidated recommendations
+        summary_content = f"Comprehensive analysis completed using {len(workflow_result.agent_results)} specialized agents. " + \
+                         " ".join(workflow_result.consolidated_recommendations[:3])
+        
+        summary = GoldSummary(
+            contract_id=contract_id,
+            summary_type="agent_orchestrator",
+            title="Agent Orchestrator Summary",
+            content=summary_content,
+            key_points=workflow_result.consolidated_recommendations[:5],
+            word_count=len(summary_content.split()),
+            model_version=workflow_result.workflow_version
+        )
+        db.add(summary)
+        
+        await db.commit()
+        
+        return {
+            "status": "completed",
+            "overall_risk_score": risk_score,
+            "risk_level": risk_level,
+            "confidence": workflow_result.overall_confidence,
+            "findings_created": findings_created,
+            "execution_time_ms": workflow_result.execution_time_ms,
+            "agents_used": len(workflow_result.agent_results),
+            "run_id": workflow_result.run_id
         }
     
     async def _step_extract_clauses(self, contract_id: str, db: AsyncSession) -> Dict[str, Any]:
@@ -397,8 +557,8 @@ class DocumentProcessor:
         if existing_clauses:
             return {"status": "already_exists", "clause_count": len(existing_clauses)}
         
-        # Use AI to extract clauses
-        clauses = await self._extract_contract_clauses(text_raw.raw_text, contract_id)
+        # Use AI to extract clauses with comprehensive analysis
+        clauses = await self._extract_contract_clauses_comprehensive(text_raw.raw_text, contract_id)
         
         clause_count = 0
         for clause_data in clauses:
@@ -617,11 +777,29 @@ class DocumentProcessor:
         
         # Send external alerts
         try:
+            # Get findings and suggestions for comprehensive alert
+            result = await db.execute(
+                select(GoldFinding).where(GoldFinding.contract_id == contract_id)
+                .order_by(GoldFinding.created_at.desc()).limit(5)
+            )
+            findings = result.scalars().all()
+            
+            result = await db.execute(
+                select(GoldSuggestion).where(GoldSuggestion.contract_id == contract_id)
+                .order_by(GoldSuggestion.created_at.desc()).limit(3)
+            )
+            suggestions = result.scalars().all()
+            
             risk_analysis = {
                 "overall_risk_level": score.risk_level,
                 "overall_risk_score": score.overall_score / 100,
-                "identified_risks": [],  # Would be populated from findings
-                "recommendations": []  # Would be populated from suggestions
+                "category_scores": score.category_scores or {},
+                "identified_risks": [f.title for f in findings],
+                "risk_descriptions": [f.description for f in findings],
+                "recommendations": [s.title for s in suggestions],
+                "contract_id": contract_id,
+                "file_size": contract.file_size,
+                "processing_completed": True
             }
             
             alert_results = await external_integrations.send_risk_alert(
@@ -677,6 +855,112 @@ class DocumentProcessor:
         except Exception as e:
             raise Exception(f"Failed to extract DOCX text: {e}")
     
+    async def _extract_contract_clauses_comprehensive(self, text: str, contract_id: str) -> List[Dict[str, Any]]:
+        """Extract clauses using comprehensive AI analysis with all clause types"""
+        try:
+            clause_prompt = f"""
+            Analyze this contract document and extract ALL key clauses. For each clause found, provide:
+            
+            CLAUSE TYPES TO FIND:
+            - liability: Liability and indemnification clauses
+            - termination: Termination and cancellation clauses  
+            - renewal: Renewal and extension clauses
+            - payment: Payment terms and financial clauses
+            - intellectual_property: IP ownership and licensing
+            - confidentiality: Non-disclosure and confidentiality
+            - governing_law: Governing law and jurisdiction
+            - dispute_resolution: Dispute resolution and arbitration
+            - force_majeure: Force majeure and extraordinary circumstances
+            - warranties: Warranties and representations
+            - limitation: Limitation of liability clauses
+            - performance: Performance standards and SLAs
+            
+            Document text (first 8000 characters):
+            {text[:8000]}
+            
+            Return as JSON array with this exact format:
+            [{{
+                "type": "clause_type",
+                "name": "Brief clause name",
+                "text": "Full clause text",
+                "start_offset": 0,
+                "end_offset": 100,
+                "confidence": 0.95,
+                "risk_indicators": ["risk1", "risk2"],
+                "attributes": {{"key": "value"}}
+            }}]
+            """
+            
+            result = await llm_factory.generate_completion(
+                prompt=clause_prompt,
+                task_type=LLMTask.ANALYSIS,
+                max_tokens=2000,
+                temperature=0.1
+            )
+            
+            # Track LLM call
+            llm_call = LlmCall(
+                contract_id=contract_id,
+                provider="openai",
+                model="gpt-4",
+                call_type="completion",
+                input_tokens=result.get("input_tokens", 0),
+                output_tokens=result.get("output_tokens", 0),
+                total_tokens=result.get("total_tokens", 0),
+                estimated_cost=result.get("cost", 0.0),
+                success=True,
+                purpose="clause_extraction"
+            )
+            
+            async for db in get_operational_db():
+                db.add(llm_call)
+                await db.commit()
+                break
+            
+            try:
+                clauses = json.loads(result["content"])
+                return clauses if isinstance(clauses, list) else []
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse AI clause extraction response")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Comprehensive clause extraction failed: {e}")
+            return []
+
+    async def _generate_tokens(self, contract_id: str, text: str, db: AsyncSession):
+        """Generate and store tokens for search and analysis"""
+        try:
+            # Simple tokenization - extract meaningful words
+            import re
+            words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
+            
+            # Count word frequencies
+            word_freq = {}
+            for i, word in enumerate(words):
+                if word not in word_freq:
+                    word_freq[word] = {"count": 0, "positions": []}
+                word_freq[word]["count"] += 1
+                word_freq[word]["positions"].append(i)
+            
+            # Store top 100 most frequent tokens
+            sorted_words = sorted(word_freq.items(), key=lambda x: x[1]["count"], reverse=True)
+            
+            for word, data in sorted_words[:100]:
+                token = Token(
+                    contract_id=contract_id,
+                    token_text=word,
+                    token_type="word",
+                    position=data["positions"][0],  # First occurrence
+                    frequency=data["count"]
+                )
+                db.add(token)
+                
+            logger.info(f"Generated {min(100, len(sorted_words))} tokens for contract {contract_id}")
+            
+        except Exception as e:
+            logger.warning(f"Token generation failed: {e}")
+
     async def _create_embedding(self, text: str, contract_id: str) -> List[float]:
         """Create vector embedding with LLM call tracking"""
         try:

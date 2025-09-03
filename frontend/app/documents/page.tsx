@@ -3,12 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { getUserData, isAuthenticated, logout, authenticatedFetch, type User } from '@/lib/auth';
 
-interface User {
-  user_id: string;
-  email: string;
-  name: string;
-}
+// User interface is now imported from @/lib/auth
 
 interface Document {
   contract_id: string;
@@ -37,21 +34,22 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     // Check authentication
-    const userData = localStorage.getItem('docushield_user');
-    if (!userData) {
+    if (!isAuthenticated()) {
       router.push('/auth');
       return;
     }
 
-    const currentUser: User = JSON.parse(userData);
-    setUser(currentUser);
-    fetchDocuments(currentUser.user_id);
+    const currentUser = getUserData();
+    if (currentUser) {
+      setUser(currentUser);
+      fetchDocuments();
+    }
   }, [router]);
 
-  const fetchDocuments = async (userId: string) => {
+  const fetchDocuments = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:8000/api/documents?user_id=${userId}&limit=50`);
+      const response = await authenticatedFetch(`http://localhost:8000/api/documents?limit=50`);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch documents: ${response.statusText}`);
@@ -66,8 +64,8 @@ export default function DocumentsPage() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('docushield_user');
+  const handleLogout = async () => {
+    await logout();
     router.push('/auth');
   };
 
@@ -93,7 +91,19 @@ export default function DocumentsPage() {
       case 'processing': return 'bg-yellow-100 text-yellow-800';
       case 'uploaded': return 'bg-blue-100 text-blue-800';
       case 'failed': return 'bg-red-100 text-red-800';
+      case 'timeout': return 'bg-orange-100 text-orange-800';
       default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusMessage = (status: string): string => {
+    switch (status.toLowerCase()) {
+      case 'completed': return 'Analysis Complete';
+      case 'processing': return 'Processing...';
+      case 'uploaded': return 'Ready for Processing';
+      case 'failed': return 'Processing Failed';
+      case 'timeout': return 'Processing Timeout';
+      default: return status;
     }
   };
 
@@ -107,7 +117,7 @@ export default function DocumentsPage() {
     if (!user) return;
 
     try {
-      const response = await fetch('http://localhost:8000/api/documents/process', {
+      const response = await authenticatedFetch('http://localhost:8000/api/documents/process', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -127,7 +137,7 @@ export default function DocumentsPage() {
       alert(`Document processing started! Processing ID: ${result.processing_run_id}`);
       
       // Refresh documents list
-      fetchDocuments(user.user_id);
+      fetchDocuments();
     } catch (err) {
       alert(`Processing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
@@ -305,7 +315,7 @@ export default function DocumentsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(document.status)}`}>
-                          {document.status}
+                          {getStatusMessage(document.status)}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">

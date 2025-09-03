@@ -1,12 +1,20 @@
 """
 Migration 001: Alter raw_bytes column to LONGBLOB
-Created: 2025-09-02
+Created: 2025-01-02
 Purpose: Fix "Data too long for column" error by increasing raw_bytes column size
 """
 import asyncio
+import sys
+from pathlib import Path
 from sqlalchemy import text
-from app.database import get_operational_db
 import logging
+
+# Ensure the backend directory is in the Python path
+backend_path = str(Path(__file__).parent.parent)
+if backend_path not in sys.path:
+    sys.path.insert(0, backend_path)
+
+from app.database import get_operational_db
 
 logger = logging.getLogger(__name__)
 

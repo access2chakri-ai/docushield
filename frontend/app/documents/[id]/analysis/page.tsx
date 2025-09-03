@@ -3,12 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/lib/auth';
 
-interface User {
-  user_id: string;
-  email: string;
-  name: string;
-}
+
 
 interface ContractAnalysis {
   contract: {
@@ -59,14 +56,15 @@ export default function DocumentAnalysisPage() {
 
   useEffect(() => {
     // Check authentication
-    const userData = localStorage.getItem('docushield_user');
-    if (!userData) {
+    if (!isAuthenticated()) {
       router.push('/auth');
       return;
     }
 
-    const currentUser: User = JSON.parse(userData);
-    setUser(currentUser);
+    const currentUser = getUserData();
+    if (currentUser) {
+      setUser(currentUser);
+    }
   }, [router]);
 
   useEffect(() => {
@@ -80,7 +78,7 @@ export default function DocumentAnalysisPage() {
     
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:8000/api/documents/${contractId}/analysis?user_id=${user.user_id}`);
+      const response = await authenticatedFetch(`http://localhost:8000/api/documents/${contractId}/analysis?user_id=${user.user_id}`);
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -132,7 +130,7 @@ export default function DocumentAnalysisPage() {
     if (!user) return;
 
     try {
-      const response = await fetch('http://localhost:8000/api/documents/process', {
+      const response = await authenticatedFetch('http://localhost:8000/api/documents/process', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,26 +1,29 @@
 """
 Migration Runner for DocuShield
-Handles database schema migrations with tracking
+Detects and runs migration files with tracking
 """
 import asyncio
-import importlib
-import os
 import sys
+import importlib
 from pathlib import Path
 from sqlalchemy import text
-from app.database import get_operational_db
 import logging
+
+# Add backend to Python path
+backend_path = str(Path(__file__).parent.parent)
+sys.path.insert(0, backend_path)
+
+from app.database import get_operational_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Add the parent directory to Python path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 class MigrationRunner:
+    """Migration runner that detects and runs migration files"""
+    
     def __init__(self):
         self.migrations_dir = Path(__file__).parent
-        
+    
     async def create_migrations_table(self):
         """Create migrations tracking table if it doesn't exist"""
         try:
@@ -37,7 +40,6 @@ class MigrationRunner:
                 break
         except Exception as e:
             logger.warning(f"⚠️ Could not create migrations table: {e}")
-            # This might happen if database doesn't exist yet - that's okay
     
     async def get_applied_migrations(self):
         """Get list of already applied migrations"""
@@ -51,7 +53,7 @@ class MigrationRunner:
                 return [row.migration_id for row in result.fetchall()]
         except Exception as e:
             logger.warning(f"⚠️ Could not get applied migrations: {e}")
-            return []  # Return empty list if table doesn't exist yet
+            return []
     
     def get_available_migrations(self):
         """Get list of available migration files"""
@@ -77,7 +79,7 @@ class MigrationRunner:
                 # Record successful migration
                 async for db in get_operational_db():
                     await db.execute(text("""
-                        INSERT INTO schema_migrations (migration_id, success) 
+                        INSERT IGNORE INTO schema_migrations (migration_id, success)
                         VALUES (:migration_id, TRUE)
                     """), {"migration_id": migration_id})
                     await db.commit()
@@ -93,13 +95,16 @@ class MigrationRunner:
             logger.error(f"❌ Migration {migration_id} failed: {e}")
             
             # Record failed migration
-            async for db in get_operational_db():
-                await db.execute(text("""
-                    INSERT INTO schema_migrations (migration_id, success) 
-                    VALUES (:migration_id, FALSE)
-                """), {"migration_id": migration_id})
-                await db.commit()
-                break
+            try:
+                async for db in get_operational_db():
+                    await db.execute(text("""
+                        INSERT IGNORE INTO schema_migrations (migration_id, success) 
+                        VALUES (:migration_id, FALSE)
+                    """), {"migration_id": migration_id})
+                    await db.commit()
+                    break
+            except Exception as record_error:
+                logger.error(f"❌ Could not record migration failure: {record_error}")
             
             return False
     
