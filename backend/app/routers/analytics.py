@@ -42,9 +42,14 @@ async def get_dashboard_data(
         )
         risk_data = [{"risk_level": row[0], "count": row[1]} for row in risk_distribution.fetchall()]
         
-        # Recent activity
+        # Recent activity - exclude raw_bytes to prevent memory issues
         recent_contracts = await db.execute(
-            select(BronzeContract)
+            select(
+                BronzeContract.contract_id,
+                BronzeContract.filename,
+                BronzeContract.status,
+                BronzeContract.created_at
+            )
             .where(BronzeContract.owner_user_id == current_user.user_id)
             .order_by(BronzeContract.created_at.desc())
             .limit(5)
@@ -56,7 +61,7 @@ async def get_dashboard_data(
                 "status": contract.status,
                 "created_at": contract.created_at.isoformat()
             }
-            for contract in recent_contracts.scalars().all()
+            for contract in recent_contracts.all()
         ]
         
         return {

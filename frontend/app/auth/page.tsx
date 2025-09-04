@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { login, register, resetPassword, isAuthenticated, type LoginRequest, type RegisterRequest } from '@/lib/auth';
+import { login, register, resetPassword, isAuthenticated, type LoginRequest, type RegisterRequest } from '@/utils/auth';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);

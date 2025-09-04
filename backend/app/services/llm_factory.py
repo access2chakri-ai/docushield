@@ -60,10 +60,10 @@ class LLMFactory:
                 "classification": ["gpt-3.5-turbo", "gpt-4"]
             },
             LLMProvider.ANTHROPIC: {
-                "completion": ["claude-3-opus-20240229", "claude-3-sonnet-20240229", "claude-3-haiku-20240307"],
-                "analysis": ["claude-3-opus-20240229", "claude-3-sonnet-20240229"],
-                "summarization": ["claude-3-sonnet-20240229", "claude-3-haiku-20240307"],
-                "classification": ["claude-3-haiku-20240307"]
+                "completion": ["claude-opus-4-20250514", "claude-sonnet-4-20250514", "claude-3-5-haiku-20241022"],
+                "analysis": ["claude-opus-4-20250514", "claude-sonnet-4-20250514"],
+                "summarization": ["claude-sonnet-4-20250514", "claude-3-5-haiku-20241022"],
+                "classification": ["claude-3-5-haiku-20241022"]
             },
             LLMProvider.GEMINI: {
                 "completion": ["gemini-pro", "gemini-pro-vision"],
@@ -82,7 +82,7 @@ class LLMFactory:
         # Cost per 1K tokens (approximate)
         self.cost_per_1k_tokens = {
             LLMProvider.OPENAI: {"gpt-4": 0.03, "gpt-3.5-turbo": 0.002, "text-embedding-3-small": 0.00002},
-            LLMProvider.ANTHROPIC: {"claude-3-opus-20240229": 0.015, "claude-3-sonnet-20240229": 0.003, "claude-3-haiku-20240307": 0.00025},
+            LLMProvider.ANTHROPIC: {"claude-opus-4-20250514": 0.015, "claude-sonnet-4-20250514": 0.003, "claude-3-5-haiku-20241022": 0.00025},
             LLMProvider.GEMINI: {"gemini-pro": 0.001},
             LLMProvider.GROQ: {"mixtral-8x7b-32768": 0.0006, "llama2-70b-4096": 0.0008}
         }

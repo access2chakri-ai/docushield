@@ -4,7 +4,10 @@ Clean, structured implementation with separated routers and schemas
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import logging
+
+# Setup clean logging first
+from app.core.logging_config import setup_logging, get_clean_logger
+setup_logging(log_level="INFO")
 
 # Database and migrations
 from app.database import init_db
@@ -13,7 +16,22 @@ from app.core.config import settings
 # Routers
 from app.routers import auth, documents, search, health, chat, analytics, llm, integrations, digital_twin, monitoring
 
-logger = logging.getLogger(__name__)
+# Import dependencies that were previously imported inline
+from migrations.migration_runner import MigrationRunner
+import uvicorn
+
+# Import startup messages with fallback
+try:
+    from app.core.startup_messages import log_startup_complete
+except ImportError:
+    # Fallback if startup_messages is not available
+    def log_startup_complete():
+        logger = get_clean_logger("app.main")
+        logger.info("🚀 DocuShield backend started successfully")
+        logger.info("📡 API available at http://localhost:8000")
+        logger.info("📖 Documentation at http://localhost:8000/docs")
+
+logger = get_clean_logger(__name__)
 
 # =============================================================================
 # FASTAPI APP SETUP
@@ -62,7 +80,6 @@ async def startup():
     
     # Auto-run database migrations on startup
     try:
-        from migrations.migration_runner import MigrationRunner
         migration_runner = MigrationRunner()
         
         logger.info("🔄 Checking for database migrations...")
@@ -78,9 +95,11 @@ async def startup():
         logger.info("✅ Database tables verified")
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}")
+    
+    # Log clean startup message
+    log_startup_complete()
 
 # Health endpoints are now handled by health.router
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
