@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/lib/auth';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
 
 
 

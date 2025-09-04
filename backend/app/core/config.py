@@ -83,6 +83,14 @@ class Settings(BaseSettings):
     # Document Processing
     max_file_size_mb: int = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
     supported_file_types: list = ["pdf", "docx", "txt", "md"]
+    max_retry_attempts: int = int(os.getenv("MAX_RETRY_ATTEMPTS", "3"))
+    retry_cooldown_minutes: int = int(os.getenv("RETRY_COOLDOWN_MINUTES", "5"))
+    
+    # Processing Safety Limits
+    max_processing_time_minutes: int = int(os.getenv("MAX_PROCESSING_TIME_MINUTES", "15"))
+    max_text_chunks: int = int(os.getenv("MAX_TEXT_CHUNKS", "500"))
+    max_llm_calls_per_document: int = int(os.getenv("MAX_LLM_CALLS_PER_DOCUMENT", "100"))
+    max_file_read_iterations: int = int(os.getenv("MAX_FILE_READ_ITERATIONS", "1000"))
     
     # Monitoring & Performance
     enable_real_time_monitoring: bool = os.getenv("ENABLE_REAL_TIME_MONITORING", "true").lower() == "true"

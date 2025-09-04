@@ -8,6 +8,19 @@ from typing import List, Optional
 import asyncio
 import hashlib
 import logging
+import io
+from datetime import datetime, timedelta
+
+# Import PDF and DOCX processing libraries
+try:
+    import PyPDF2
+except ImportError:
+    PyPDF2 = None
+
+try:
+    import docx
+except ImportError:
+    docx = None
 
 from app.database import get_operational_db
 from app.models import User, BronzeContract, BronzeContractTextRaw, ProcessingRun
@@ -15,6 +28,8 @@ from app.core.dependencies import get_current_active_user
 from app.schemas.requests import ProcessContractRequest
 from app.schemas.responses import ContractAnalysisResponse
 from app.services.document_processor import document_processor
+from app.services.document_validator import document_validator, DocumentCategory
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -66,7 +81,10 @@ async def upload_document(
         max_size = 50 * 1024 * 1024  # Reduced to 50MB for better performance
         chunk_size = 1024 * 1024  # 1MB chunks
         
-        while True:
+        max_iterations = settings.max_file_read_iterations  # Safety limit to prevent infinite loops
+        iteration_count = 0
+        
+        while iteration_count < max_iterations:
             chunk = await file.read(chunk_size)
             if not chunk:
                 break
@@ -78,6 +96,13 @@ async def upload_document(
                 )
             
             content.extend(chunk)
+            iteration_count += 1
+            
+        if iteration_count >= max_iterations:
+            raise HTTPException(
+                status_code=413,
+                detail="File reading exceeded maximum iterations. File may be corrupted."
+            )
         
         content = bytes(content)
         
@@ -141,6 +166,50 @@ async def upload_document(
                 "status": "duplicate"
             }
         
+        # 8. Extract text content for business validation
+        text_content = ""
+        try:
+            if file.content_type == "application/pdf":
+                text_content = await _extract_pdf_text(content)
+            elif "wordprocessingml" in file.content_type:
+                text_content = await _extract_docx_text(content)
+            elif "text/" in file.content_type:
+                text_content = content.decode('utf-8', errors='ignore')
+            else:
+                text_content = content.decode('utf-8', errors='ignore')
+        except Exception as e:
+            logger.warning(f"Text extraction failed for validation: {e}")
+            text_content = ""
+        
+        # 9. Validate document type and business relevance
+        is_valid, doc_category, validation_details = await document_validator.validate_document(
+            filename=file.filename,
+            text_content=text_content,
+            mime_type=file.content_type or "application/octet-stream"
+        )
+        
+        if not is_valid:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Document not suitable for processing",
+                    "reason": validation_details["reason"],
+                    "supported_types": [
+                        "SaaS contracts and agreements",
+                        "Vendor/supplier agreements", 
+                        "Software licenses and subscriptions",
+                        "Invoices and billing documents",
+                        "Procurement documents (SaaS/software related)",
+                        "Service agreements and SLAs"
+                    ],
+                    "confidence": validation_details["confidence"],
+                    "filename_score": validation_details["filename_score"],
+                    "content_score": validation_details["content_score"]
+                }
+            )
+        
+        logger.info(f"Document validated as {doc_category.value} with confidence {validation_details['confidence']:.2f}")
+        
         # Create contract record - store all files in TiDB LONGBLOB
         contract = BronzeContract(
             filename=file.filename,
@@ -187,13 +256,25 @@ async def list_documents(
 ):
     """Get list of uploaded documents - JWT authenticated"""
     try:
+        # Exclude raw_bytes from listing to prevent memory issues with large files
         result = await db.execute(
-            select(BronzeContract)
+            select(
+                BronzeContract.contract_id,
+                BronzeContract.filename,
+                BronzeContract.mime_type,
+                BronzeContract.file_size,
+                BronzeContract.status,
+                BronzeContract.created_at,
+                BronzeContract.source,
+                BronzeContract.retry_count,
+                BronzeContract.last_retry_at,
+                BronzeContract.max_retries
+            )
             .where(BronzeContract.owner_user_id == current_user.user_id)
             .order_by(BronzeContract.created_at.desc())
             .limit(limit)
         )
-        contracts = result.scalars().all()
+        contracts = result.all()
         
         documents = []
         for contract in contracts:
@@ -204,7 +285,10 @@ async def list_documents(
                 "file_size": contract.file_size,
                 "status": contract.status,
                 "created_at": contract.created_at.isoformat(),
-                "source": contract.source
+                "source": contract.source,
+                "retry_count": contract.retry_count,
+                "last_retry_at": contract.last_retry_at.isoformat() if contract.last_retry_at else None,
+                "max_retries": contract.max_retries
             })
         
         return {
@@ -295,7 +379,39 @@ async def retry_processing(
                 detail="Document is currently being processed. Please wait."
             )
         
-        # Reset status to processing
+        # Check retry limits
+        if contract.retry_count >= (contract.max_retries or settings.max_retry_attempts):
+            raise HTTPException(
+                status_code=429,
+                detail=f"Maximum retry limit reached ({contract.max_retries or settings.max_retry_attempts} attempts). "
+                       f"Please contact support if you believe this document should be processable."
+            )
+        
+        # Check cooldown period
+        if contract.last_retry_at:
+            cooldown_period = timedelta(minutes=settings.retry_cooldown_minutes)
+            time_since_last_retry = datetime.utcnow() - contract.last_retry_at
+            
+            if time_since_last_retry < cooldown_period:
+                remaining_time = cooldown_period - time_since_last_retry
+                remaining_minutes = int(remaining_time.total_seconds() / 60)
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Please wait {remaining_minutes} more minutes before retrying. "
+                           f"Cooldown period helps prevent system overload."
+                )
+        
+        # Check for persistent validation failures
+        if contract.status == "validation_failed" and contract.retry_count >= 1:
+            raise HTTPException(
+                status_code=422,
+                detail="Document validation keeps failing. This document type may not be supported. "
+                       "Please ensure you're uploading a business document (SaaS contract, invoice, etc.)"
+            )
+        
+        # Update retry tracking
+        contract.retry_count = (contract.retry_count or 0) + 1
+        contract.last_retry_at = datetime.utcnow()
         contract.status = "processing"
         await db.commit()
         
@@ -419,6 +535,153 @@ async def process_contract(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
+@router.delete("/{contract_id}")
+async def delete_document(
+    contract_id: str,
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """Delete a document and all its associated data"""
+    try:
+        # Get the contract
+        result = await db.execute(
+            select(BronzeContract).where(
+                BronzeContract.contract_id == contract_id,
+                BronzeContract.owner_user_id == current_user.user_id
+            )
+        )
+        contract = result.scalar_one_or_none()
+        
+        if not contract:
+            raise HTTPException(
+                status_code=404,
+                detail="Document not found or you don't have permission to delete it"
+            )
+        
+        # Delete all associated data in correct order (respecting foreign keys)
+        # 1. Delete alerts
+        await db.execute(
+            text("DELETE FROM alerts WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        # 2. Delete LLM calls
+        await db.execute(
+            text("DELETE FROM llm_calls WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        # 3. Delete gold layer data
+        await db.execute(
+            text("DELETE FROM gold_summaries WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        await db.execute(
+            text("DELETE FROM gold_suggestions WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        await db.execute(
+            text("DELETE FROM gold_findings WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        await db.execute(
+            text("DELETE FROM gold_contract_scores WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        # 4. Delete silver layer data
+        await db.execute(
+            text("DELETE FROM tokens WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        await db.execute(
+            text("DELETE FROM silver_clause_spans WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        await db.execute(
+            text("DELETE FROM silver_chunks WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        # 5. Delete processing data
+        await db.execute(
+            text("DELETE FROM processing_steps WHERE run_id IN (SELECT run_id FROM processing_runs WHERE contract_id = :contract_id)"),
+            {"contract_id": contract_id}
+        )
+        
+        await db.execute(
+            text("DELETE FROM processing_runs WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        # 6. Delete bronze layer data
+        await db.execute(
+            text("DELETE FROM bronze_contract_text_raw WHERE contract_id = :contract_id"),
+            {"contract_id": contract_id}
+        )
+        
+        # 7. Finally delete the main contract record
+        await db.delete(contract)
+        await db.commit()
+        
+        logger.info(f"Successfully deleted document {contract_id} ({contract.filename}) for user {current_user.user_id}")
+        
+        return {
+            "message": "Document deleted successfully",
+            "contract_id": contract_id,
+            "filename": contract.filename
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete document {contract_id}: {e}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete document: {str(e)}"
+        )
+
+# Helper functions for text extraction
+async def _extract_pdf_text(content: bytes) -> str:
+    """Extract text from PDF bytes"""
+    if PyPDF2 is None:
+        raise ImportError("PyPDF2 is required for PDF text extraction")
+    
+    try:
+        
+        pdf_file = io.BytesIO(content)
+        reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        return text.strip()
+    except Exception as e:
+        logger.warning(f"PDF text extraction failed: {e}")
+        return ""
+
+async def _extract_docx_text(content: bytes) -> str:
+    """Extract text from DOCX bytes"""
+    if docx is None:
+        raise ImportError("python-docx is required for DOCX text extraction")
+    
+    try:
+        
+        docx_file = io.BytesIO(content)
+        doc = docx.Document(docx_file)
+        text = ""
+        for paragraph in doc.paragraphs:
+            text += paragraph.text + "\n"
+        return text.strip()
+    except Exception as e:
+        logger.warning(f"DOCX text extraction failed: {e}")
+        return ""
+
 # Background task function
 async def process_contract_background(contract_id: str, user_id: str):
     """Background task to process uploaded contract with timeout protection"""
@@ -430,17 +693,21 @@ async def process_contract_background(contract_id: str, user_id: str):
         
         # Update contract status to processing
         async for db in get_operational_db():
-            await db.execute(
-                text("UPDATE bronze_contracts SET status = 'processing' WHERE contract_id = :contract_id"),
-                {"contract_id": contract_id}
-            )
-            await db.commit()
+            try:
+                await db.execute(
+                    text("UPDATE bronze_contracts SET status = 'processing' WHERE contract_id = :contract_id"),
+                    {"contract_id": contract_id}
+                )
+                await db.commit()
+            finally:
+                break  # Prevent infinite loop
         
         try:
             # Process the contract with timeout
             result = await asyncio.wait_for(
                 document_processor.process_contract(
                     contract_id=contract_id,
+                    user_id=user_id,
                     trigger="upload"
                 ),
                 timeout=timeout_seconds
@@ -448,11 +715,14 @@ async def process_contract_background(contract_id: str, user_id: str):
             
             # Update status to completed
             async for db in get_operational_db():
-                await db.execute(
-                    text("UPDATE bronze_contracts SET status = 'completed' WHERE contract_id = :contract_id"),
-                    {"contract_id": contract_id}
-                )
-                await db.commit()
+                try:
+                    await db.execute(
+                        text("UPDATE bronze_contracts SET status = 'completed' WHERE contract_id = :contract_id"),
+                        {"contract_id": contract_id}
+                    )
+                    await db.commit()
+                finally:
+                    break  # Prevent infinite loop
             
             logger.info(f"✅ Background processing completed for contract {contract_id}")
             
@@ -461,11 +731,14 @@ async def process_contract_background(contract_id: str, user_id: str):
             
             # Update status to timeout
             async for db in get_operational_db():
-                await db.execute(
-                    text("UPDATE bronze_contracts SET status = 'timeout' WHERE contract_id = :contract_id"),
-                    {"contract_id": contract_id}
-                )
-                await db.commit()
+                try:
+                    await db.execute(
+                        text("UPDATE bronze_contracts SET status = 'timeout' WHERE contract_id = :contract_id"),
+                        {"contract_id": contract_id}
+                    )
+                    await db.commit()
+                finally:
+                    break  # Prevent infinite loop
             
             raise HTTPException(
                 status_code=408,
@@ -478,10 +751,13 @@ async def process_contract_background(contract_id: str, user_id: str):
         # Update status to failed
         try:
             async for db in get_operational_db():
-                await db.execute(
-                    text("UPDATE bronze_contracts SET status = 'failed' WHERE contract_id = :contract_id"),
-                    {"contract_id": contract_id}
-                )
-                await db.commit()
+                try:
+                    await db.execute(
+                        text("UPDATE bronze_contracts SET status = 'failed' WHERE contract_id = :contract_id"),
+                        {"contract_id": contract_id}
+                    )
+                    await db.commit()
+                finally:
+                    break  # Prevent infinite loop
         except Exception as db_error:
             logger.error(f"Failed to update contract status: {db_error}")

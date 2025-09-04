@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated, logout, authenticatedFetch, type User } from '@/lib/auth';
+import { getUserData, isAuthenticated, logout, authenticatedFetch, type User } from '@/utils/auth';
 
-// User interface is now imported from @/lib/auth
+// User interface is now imported from @/utils/auth
 
 interface Document {
   contract_id: string;
@@ -140,6 +140,32 @@ export default function DocumentsPage() {
       fetchDocuments();
     } catch (err) {
       alert(`Processing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const deleteDocument = async (document: Document) => {
+    if (!user) return;
+
+    if (!confirm(`Are you sure you want to delete "${document.filename}"? This action cannot be undone and will remove all associated analysis data.`)) {
+      return;
+    }
+
+    try {
+      const response = await authenticatedFetch(`http://localhost:8000/api/documents/${document.contract_id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || 'Failed to delete document');
+      }
+
+      alert(`Document "${document.filename}" deleted successfully`);
+      
+      // Refresh documents list
+      fetchDocuments();
+    } catch (err) {
+      alert(`Delete failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
@@ -344,6 +370,13 @@ export default function DocumentsPage() {
                         >
                           💬 Chat
                         </Link>
+                        <button
+                          onClick={() => deleteDocument(document)}
+                          className="text-red-600 hover:text-red-900"
+                          disabled={document.status === 'processing'}
+                        >
+                          🗑️ Delete
+                        </button>
                       </td>
                     </tr>
                   ))}

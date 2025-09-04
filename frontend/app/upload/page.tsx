@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/lib/auth';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
 
 interface UploadedDocument {
   contract_id: string;
   filename: string;
-  status: 'uploaded' | 'processing' | 'completed' | 'failed';
+  status: 'uploaded' | 'processing' | 'completed' | 'failed' | 'validation_failed';
   upload_time: string;
   processing_error?: string;
 }
@@ -175,7 +175,15 @@ export default function UploadPage() {
         setUploadResult(`🔄 Retry started for document!`);
       } else {
         const errorData = await response.json().catch(() => ({ detail: 'Retry failed' }));
-        setError(`Retry failed: ${errorData.detail}`);
+        
+        // Handle specific retry limit errors
+        if (response.status === 429) {
+          setError(`Retry limit reached: ${errorData.detail}`);
+        } else if (response.status === 422) {
+          setError(`Validation issue: ${errorData.detail}`);
+        } else {
+          setError(`Retry failed: ${errorData.detail}`);
+        }
       }
     } catch (error) {
       setError('Failed to retry processing');
@@ -202,6 +210,18 @@ export default function UploadPage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+        
+        // Handle validation errors with detailed information
+        if (response.status === 422 && errorData.detail && typeof errorData.detail === 'object') {
+          const validationError = errorData.detail;
+          setError(
+            `Document validation failed: ${validationError.reason}\n\n` +
+            `Supported document types:\n${validationError.supported_types?.join('\n• ') || 'Business documents only'}\n\n` +
+            `Confidence: ${(validationError.confidence * 100).toFixed(1)}%`
+          );
+          return;
+        }
+        
         throw new Error(`Upload failed: ${errorData.detail || response.statusText}`);
       }
 
@@ -405,6 +425,18 @@ export default function UploadPage() {
                           <span className="text-xs text-gray-500">
                             No need to upload again - we'll reprocess the same file
                           </span>
+                        </div>
+                        <div className="mt-1 text-xs text-gray-600">
+                          ⚠️ Limited to 3 retry attempts with 5-minute cooldown between retries
+                        </div>
+                      </div>
+                    )}
+                    
+                    {doc.status === 'validation_failed' && (
+                      <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-700">
+                        <strong>Validation Failed:</strong> This document type is not supported for processing.
+                        <div className="mt-1 text-xs">
+                          📋 We only process: SaaS contracts, vendor agreements, invoices, procurement documents, service agreements
                         </div>
                       </div>
                     )}
