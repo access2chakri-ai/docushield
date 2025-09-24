@@ -1,0 +1,120 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="authGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8faff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e0e7ff;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Security pattern -->
+    <pattern id="securityPattern" x="0" y="0" width="180" height="180" patternUnits="userSpaceOnUse">
+      <rect width="180" height="180" fill="transparent"/>
+      <g opacity="0.04">
+        <!-- Lock icon -->
+        <rect x="70" y="80" width="30" height="25" rx="3" fill="none" stroke="#3b82f6" stroke-width="2"/>
+        <path d="M75 80 C75 72 82 65 90 65 C98 65 105 72 105 80" fill="none" stroke="#3b82f6" stroke-width="2"/>
+        <circle cx="90" cy="92" r="2" fill="#3b82f6"/>
+        
+        <!-- Shield -->
+        <path d="M40 40 C40 40 50 35 60 40 C60 50 60 60 50 70 C40 60 40 50 40 40 Z" fill="#10b981"/>
+        <path d="M45 45 L48 50 L55 42" stroke="#ffffff" stroke-width="2" fill="none"/>
+        
+        <!-- Key -->
+        <rect x="120" y="50" width="20" height="4" rx="2" fill="#8b5cf6"/>
+        <circle cx="125" cy="52" r="6" fill="none" stroke="#8b5cf6" stroke-width="2"/>
+        <rect x="135" y="48" width="3" height="3" fill="#8b5cf6"/>
+        <rect x="135" y="53" width="3" height="3" fill="#8b5cf6"/>
+        
+        <!-- Fingerprint -->
+        <g opacity="0.6">
+          <path d="M50 120 C50 115 55 110 60 110 C65 110 70 115 70 120" fill="none" stroke="#6366f1" stroke-width="1"/>
+          <path d="M52 125 C52 120 56 115 60 115 C64 115 68 120 68 125" fill="none" stroke="#6366f1" stroke-width="1"/>
+          <path d="M54 130 C54 125 57 120 60 120 C63 120 66 125 66 130" fill="none" stroke="#6366f1" stroke-width="1"/>
+        </g>
+        
+        <!-- Two-factor authentication -->
+        <rect x="110" y="120" width="25" height="35" rx="3" fill="none" stroke="#a855f7" stroke-width="2"/>
+        <rect x="115" y="125" width="15" height="10" rx="1" fill="#a855f7" opacity="0.3"/>
+        <circle cx="118" cy="145" r="1" fill="#a855f7"/>
+        <circle cx="122" cy="145" r="1" fill="#a855f7"/>
+        <circle cx="126" cy="145" r="1" fill="#a855f7"/>
+        <circle cx="130" cy="145" r="1" fill="#a855f7"/>
+      </g>
+    </pattern>
+    
+    <!-- Encryption visualization -->
+    <pattern id="encryptionPattern" x="0" y="0" width="120" height="120" patternUnits="userSpaceOnUse">
+      <g opacity="0.02">
+        <!-- Binary data -->
+        <text x="20" y="30" font-family="monospace" font-size="8" fill="#3b82f6">101</text>
+        <text x="50" y="30" font-family="monospace" font-size="8" fill="#3b82f6">010</text>
+        <text x="80" y="30" font-family="monospace" font-size="8" fill="#3b82f6">110</text>
+        <text x="20" y="50" font-family="monospace" font-size="8" fill="#8b5cf6">011</text>
+        <text x="50" y="50" font-family="monospace" font-size="8" fill="#8b5cf6">101</text>
+        <text x="80" y="50" font-family="monospace" font-size="8" fill="#8b5cf6">001</text>
+        <text x="20" y="70" font-family="monospace" font-size="8" fill="#6366f1">110</text>
+        <text x="50" y="70" font-family="monospace" font-size="8" fill="#6366f1">010</text>
+        <text x="80" y="70" font-family="monospace" font-size="8" fill="#6366f1">111</text>
+      </g>
+    </pattern>
+  </defs>
+  
+  <!-- Base gradient -->
+  <rect width="1920" height="1080" fill="url(#authGradient)"/>
+  
+  <!-- Security pattern overlay -->
+  <rect width="1920" height="1080" fill="url(#securityPattern)"/>
+  
+  <!-- Encryption pattern overlay -->
+  <rect width="1920" height="1080" fill="url(#encryptionPattern)"/>
+  
+  <!-- Security scan animation -->
+  <g opacity="0.1">
+    <rect x="0" y="200" width="100%" height="4" fill="url(#scanGradient)">
+      <animateTransform attributeName="transform" type="translateY" values="-200;1080;-200" dur="8s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+  
+  <defs>
+    <linearGradient id="scanGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:0" />
+      <stop offset="50%" style="stop-color:#3b82f6;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:0" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Authentication flow -->
+  <g opacity="0.08">
+    <circle cx="400" cy="300" r="20" fill="#10b981">
+      <animate attributeName="r" values="15;30;15" dur="4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.08;0.15;0.08" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="960" cy="500" r="25" fill="#3b82f6">
+      <animate attributeName="r" values="20;35;20" dur="5s" begin="1s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.08;0.12;0.08" dur="5s" begin="1s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="1400" cy="700" r="18" fill="#8b5cf6">
+      <animate attributeName="r" values="13;28;13" dur="6s" begin="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.08;0.14;0.08" dur="6s" begin="2s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  
+  <!-- Security connection lines -->
+  <g opacity="0.05" stroke="#3b82f6" stroke-width="2" fill="none">
+    <path d="M200 300 Q600 200 1000 350 Q1400 500 1700 400">
+      <animate attributeName="stroke-dasharray" values="0 2000;100 1900;0 2000" dur="10s" repeatCount="indefinite"/>
+    </path>
+    <path d="M100 600 Q500 700 900 550 Q1300 400 1600 650">
+      <animate attributeName="stroke-dasharray" values="0 2000;100 1900;0 2000" dur="12s" begin="2s" repeatCount="indefinite"/>
+    </path>
+  </g>
+  
+  <!-- Encrypted data packets -->
+  <g opacity="0.06">
+    <rect x="300" y="150" width="30" height="15" rx="3" fill="#6366f1">
+      <animateTransform attributeName="transform" type="translate" values="0 0;1200 200;0 0" dur="7s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="600" y="400" width="25" height="15" rx="3" fill="#8b5cf6">
+      <animateTransform attributeName="transform" type="translate" values="0 0;800 -100;0 0" dur="9s" begin="2s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+</svg>

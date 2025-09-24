@@ -8,7 +8,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from enum import Enum
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select, func
@@ -168,6 +168,7 @@ class DigitalTwinService:
     async def simulate_impact(self, scenario: SimulationScenario) -> Dict[str, Any]:
         """
         Simulate business impact of document risks across workflows
+        Enhanced with realistic impact calculations and workflow modeling
         """
         try:
             # Use sandbox cluster for simulation
@@ -175,8 +176,13 @@ class DigitalTwinService:
                 # Create sandbox branch with current data
                 await self._prepare_sandbox_data(scenario.affected_documents, sandbox_db)
                 
-                # Run simulation
-                simulation_results = await self._execute_simulation(scenario, sandbox_db)
+                # Get detailed document analysis for affected documents
+                document_analyses = await self._analyze_affected_documents(scenario.affected_documents)
+                
+                # Run enhanced simulation with real workflow modeling
+                simulation_results = await self._execute_enhanced_simulation(
+                    scenario, document_analyses, sandbox_db
+                )
                 
                 # Store results in analytics cluster
                 await self._store_simulation_results(scenario, simulation_results)
@@ -353,42 +359,250 @@ class DigitalTwinService:
         # For now, we'll simulate this step
         logger.info(f"Prepared sandbox data for {len(document_ids)} documents")
     
-    async def _execute_simulation(self, scenario: SimulationScenario, sandbox_db: AsyncSession) -> Dict[str, Any]:
-        """Execute the simulation scenario"""
+    async def _analyze_affected_documents(self, document_ids: List[str]) -> List[Dict[str, Any]]:
+        """Analyze affected documents to understand their risk profiles"""
+        document_analyses = []
         
-        # Simulate workflow execution with modified parameters
+        async for db in get_operational_db():
+            for doc_id in document_ids:
+                try:
+                    # Get document with all related analysis data
+                    result = await db.execute(
+                        select(BronzeContract)
+                        .options(
+                            selectinload(BronzeContract.scores),
+                            selectinload(BronzeContract.findings),
+                            selectinload(BronzeContract.clause_spans)
+                        )
+                        .where(BronzeContract.contract_id == doc_id)
+                    )
+                    contract = result.scalar_one_or_none()
+                    
+                    if contract:
+                        analysis = {
+                            "document_id": doc_id,
+                            "filename": contract.filename,
+                            "risk_score": contract.scores.overall_score if contract.scores else 50,
+                            "risk_level": contract.scores.risk_level if contract.scores else "medium",
+                            "findings": [
+                                {
+                                    "type": f.finding_type,
+                                    "severity": f.severity,
+                                    "title": f.title
+                                } for f in contract.findings
+                            ],
+                            "clauses": [
+                                {
+                                    "type": c.clause_type,
+                                    "confidence": c.confidence,
+                                    "risk_indicators": c.risk_indicators
+                                } for c in contract.clause_spans
+                            ]
+                        }
+                        document_analyses.append(analysis)
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to analyze document {doc_id}: {e}")
+        
+        return document_analyses
+    
+    async def _execute_enhanced_simulation(
+        self, 
+        scenario: SimulationScenario, 
+        document_analyses: List[Dict[str, Any]], 
+        sandbox_db: AsyncSession
+    ) -> Dict[str, Any]:
+        """Execute enhanced simulation with realistic workflow modeling"""
+        
         results = {
             "scenario_id": scenario.scenario_id,
+            "scenario_name": scenario.name,
             "execution_time": datetime.utcnow().isoformat(),
             "affected_workflows": [],
+            "document_impacts": [],
             "financial_impact": {
                 "cost_increase": 0.0,
-                "revenue_impact": 0.0,
-                "risk_exposure": 0.0
+                "revenue_at_risk": 0.0,
+                "risk_exposure": 0.0,
+                "mitigation_cost": 0.0
             },
             "operational_impact": {
                 "delay_hours": 0,
                 "efficiency_loss": 0.0,
-                "resource_overhead": 0.0
+                "resource_overhead": 0.0,
+                "process_disruptions": []
             },
             "compliance_impact": {
                 "violation_risk": 0.0,
-                "audit_findings": 0
+                "audit_findings": 0,
+                "regulatory_exposure": 0.0
+            },
+            "strategic_impact": {
+                "reputation_risk": 0.0,
+                "competitive_impact": 0.0,
+                "partnership_risk": 0.0
             }
         }
         
-        # Calculate impacts based on scenario parameters
-        for doc_id in scenario.affected_documents:
-            # Get document risk data
-            # Apply scenario changes
-            # Calculate workflow impact
+        # Analyze each document's impact on workflows
+        for doc_analysis in document_analyses:
+            doc_impact = await self._simulate_document_workflow_impact(doc_analysis, scenario)
+            results["document_impacts"].append(doc_impact)
             
-            # Simulated calculations
-            results["financial_impact"]["cost_increase"] += 5000
-            results["operational_impact"]["delay_hours"] += 24
-            results["compliance_impact"]["violation_risk"] += 0.1
+            # Aggregate impacts
+            results["financial_impact"]["cost_increase"] += doc_impact["financial_cost"]
+            results["financial_impact"]["revenue_at_risk"] += doc_impact["revenue_risk"]
+            results["operational_impact"]["delay_hours"] += doc_impact["delay_hours"]
+            results["compliance_impact"]["violation_risk"] += doc_impact["compliance_risk"]
+            
+            # Track affected workflows
+            for workflow in doc_impact["affected_workflows"]:
+                if workflow not in results["affected_workflows"]:
+                    results["affected_workflows"].append(workflow)
+        
+        # Calculate aggregate metrics
+        results["total_risk_score"] = self._calculate_aggregate_risk_score(document_analyses)
+        results["simulation_confidence"] = self._calculate_simulation_confidence(document_analyses)
+        
+        # Generate business impact narrative
+        results["impact_narrative"] = await self._generate_impact_narrative(results, scenario)
         
         return results
+    
+    async def _simulate_document_workflow_impact(
+        self, 
+        doc_analysis: Dict[str, Any], 
+        scenario: SimulationScenario
+    ) -> Dict[str, Any]:
+        """Simulate the workflow impact of a specific document"""
+        
+        risk_score = doc_analysis["risk_score"]
+        risk_level = doc_analysis["risk_level"]
+        findings = doc_analysis["findings"]
+        
+        # Base impact multipliers based on risk level
+        risk_multipliers = {
+            "low": 1.1,
+            "medium": 1.5,
+            "high": 2.0,
+            "critical": 3.0
+        }
+        
+        multiplier = risk_multipliers.get(risk_level, 1.5)
+        
+        # Calculate financial impact
+        base_contract_value = 100000  # Assume $100k base value
+        financial_cost = base_contract_value * (risk_score / 100) * multiplier * 0.1
+        revenue_risk = base_contract_value * (risk_score / 100) * multiplier * 0.05
+        
+        # Calculate operational impact
+        base_delay_hours = 24
+        delay_hours = base_delay_hours * multiplier
+        
+        # Calculate compliance impact
+        compliance_risk = (risk_score / 100) * multiplier * 0.1
+        
+        # Identify affected workflows based on document type and findings
+        affected_workflows = []
+        
+        # Analyze findings to determine workflow impact
+        for finding in findings:
+            finding_type = finding["type"].lower()
+            
+            if "liability" in finding_type:
+                affected_workflows.extend(["contract_lifecycle", "risk_management"])
+                financial_cost *= 1.2  # Liability increases financial risk
+                
+            elif "termination" in finding_type:
+                affected_workflows.extend(["contract_lifecycle", "vendor_onboarding"])
+                delay_hours *= 1.3  # Termination issues cause delays
+                
+            elif "payment" in finding_type or "invoice" in finding_type:
+                affected_workflows.extend(["procure_to_pay", "invoice_processing"])
+                revenue_risk *= 1.4  # Payment issues affect revenue
+                
+            elif "compliance" in finding_type:
+                affected_workflows.extend(["compliance_cycle", "risk_management"])
+                compliance_risk *= 1.5  # Direct compliance impact
+        
+        # Remove duplicates
+        affected_workflows = list(set(affected_workflows))
+        
+        return {
+            "document_id": doc_analysis["document_id"],
+            "document_name": doc_analysis["filename"],
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+            "financial_cost": financial_cost,
+            "revenue_risk": revenue_risk,
+            "delay_hours": delay_hours,
+            "compliance_risk": compliance_risk,
+            "affected_workflows": affected_workflows,
+            "impact_multiplier": multiplier,
+            "findings_count": len(findings)
+        }
+    
+    def _calculate_aggregate_risk_score(self, document_analyses: List[Dict[str, Any]]) -> float:
+        """Calculate aggregate risk score across all documents"""
+        if not document_analyses:
+            return 0.0
+        
+        total_score = sum(doc["risk_score"] for doc in document_analyses)
+        return total_score / len(document_analyses)
+    
+    def _calculate_simulation_confidence(self, document_analyses: List[Dict[str, Any]]) -> float:
+        """Calculate confidence in simulation results"""
+        if not document_analyses:
+            return 0.0
+        
+        # Base confidence on data completeness and quality
+        base_confidence = 0.8
+        
+        # Reduce confidence if we have incomplete data
+        complete_analyses = len([doc for doc in document_analyses if doc["findings"]])
+        completeness_ratio = complete_analyses / len(document_analyses)
+        
+        return base_confidence * completeness_ratio
+    
+    async def _generate_impact_narrative(
+        self, 
+        results: Dict[str, Any], 
+        scenario: SimulationScenario
+    ) -> str:
+        """Generate business impact narrative using AI"""
+        try:
+            narrative_prompt = f"""
+            Create a business impact narrative for this digital twin simulation.
+            
+            Scenario: {scenario.name}
+            Description: {scenario.description}
+            
+            Simulation Results:
+            - Financial Impact: ${results['financial_impact']['cost_increase']:,.0f} cost increase, ${results['financial_impact']['revenue_at_risk']:,.0f} revenue at risk
+            - Operational Impact: {results['operational_impact']['delay_hours']} hours of delays
+            - Compliance Risk: {results['compliance_impact']['violation_risk']:.1%} violation risk
+            - Affected Workflows: {', '.join(results['affected_workflows'])}
+            - Documents Analyzed: {len(results['document_impacts'])}
+            
+            Create a 3-4 sentence executive summary that:
+            1. Describes the scenario and its business context
+            2. Highlights the most significant impacts
+            3. Provides actionable insights for decision makers
+            4. Uses plain business language (avoid technical jargon)
+            """
+            
+            result = await self.openai_client.chat.completions.create(
+                model="gpt-4",
+                messages=[{"role": "user", "content": narrative_prompt}],
+                max_tokens=300,
+                temperature=0.3
+            )
+            
+            return result.choices[0].message.content
+            
+        except Exception as e:
+            logger.warning(f"Failed to generate impact narrative: {e}")
+            return f"Simulation of scenario '{scenario.name}' shows potential cost increase of ${results['financial_impact']['cost_increase']:,.0f} and {results['operational_impact']['delay_hours']} hours of operational delays across {len(results['affected_workflows'])} business workflows."
     
     async def _store_simulation_results(self, scenario: SimulationScenario, results: Dict[str, Any]):
         """Store simulation results in analytics cluster"""
@@ -493,6 +707,110 @@ class DigitalTwinService:
             "operational_delay_hours": len(scenario.affected_documents) * 24,
             "compliance_risk_increase": len(scenario.affected_documents) * 0.1
         }
+
+    # =============================================================================
+    # API INTERFACE METHODS
+    # =============================================================================
+    
+    async def get_workflow_insights(
+        self, 
+        workflow_type: WorkflowType, 
+        user_id: str
+    ) -> Dict[str, Any]:
+        """Get workflow insights for API"""
+        return await self.generate_digital_twin_insights(workflow_type)
+    
+    async def create_simulation(
+        self,
+        scenario_name: str,
+        description: str,
+        document_ids: List[str],
+        parameter_changes: Dict[str, Any],
+        user_id: str
+    ) -> Dict[str, Any]:
+        """Create and run a simulation"""
+        scenario = await self.create_what_if_scenario(
+            name=scenario_name,
+            description=description,
+            document_ids=document_ids,
+            changes=parameter_changes
+        )
+        
+        results = await self.simulate_impact(scenario)
+        
+        return {
+            "simulation_id": scenario.scenario_id,
+            "scenario": asdict(scenario),
+            "simulation_results": results
+        }
+    
+    async def get_user_simulations(
+        self, 
+        user_id: str, 
+        limit: int = 20
+    ) -> List[Dict[str, Any]]:
+        """Get user's simulations - placeholder implementation"""
+        # In a real implementation, this would query a simulations table
+        return []
+    
+    async def get_simulation(
+        self, 
+        simulation_id: str, 
+        user_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get specific simulation - placeholder implementation"""
+        # In a real implementation, this would query the simulation by ID
+        return None
+    
+    async def run_workflow(
+        self,
+        workflow_type: WorkflowType,
+        document_ids: List[str],
+        user_id: str
+    ) -> Dict[str, Any]:
+        """Run a Digital Twin workflow on specific documents"""
+        try:
+            # Get document analyses for all selected documents
+            document_analyses = await self._analyze_affected_documents(document_ids)
+            
+            if not document_analyses:
+                return {
+                    "error": "No valid documents found for analysis",
+                    "status": "failed"
+                }
+            
+            # Create a scenario for this workflow run
+            scenario = SimulationScenario(
+                scenario_id=f"workflow_{workflow_type.value}_{int(datetime.utcnow().timestamp())}",
+                name=f"{workflow_type.value.replace('_', ' ').title()} Workflow Analysis",
+                description=f"Automated workflow analysis for {workflow_type.value} process",
+                affected_documents=document_ids,
+                parameter_changes={},
+                expected_impact={}
+            )
+            
+            # Run simulation for this workflow
+            simulation_results = await self.simulate_impact(scenario)
+            
+            # Get workflow insights
+            insights = await self.get_workflow_insights(workflow_type, user_id)
+            
+            return {
+                "workflow_type": workflow_type.value,
+                "document_count": len(document_analyses),
+                "simulation_results": simulation_results,
+                "workflow_insights": insights,
+                "execution_time": datetime.utcnow().isoformat(),
+                "status": "completed"
+            }
+            
+        except Exception as e:
+            logger.error(f"Workflow execution failed: {e}")
+            return {
+                "error": str(e),
+                "status": "failed",
+                "workflow_type": workflow_type.value
+            }
 
 # Global digital twin service instance
 digital_twin_service = DigitalTwinService()

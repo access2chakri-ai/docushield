@@ -1,26 +1,42 @@
 """
 Migration Runner for DocuShield
-Handles database schema migrations with tracking
+Detects and runs migration files with tracking
 """
 import asyncio
-import importlib
-import os
 import sys
+import importlib
 from pathlib import Path
 from sqlalchemy import text
-from app.database import get_operational_db
 import logging
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Add backend to Python path
+backend_path = str(Path(__file__).parent.parent)
+sys.path.insert(0, backend_path)
 
-# Add the parent directory to Python path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+from app.database import get_operational_db
+from app.core.logging_config import setup_logging, get_clean_logger
+
+# Setup clean logging for migrations
+setup_logging(log_level="INFO")
+logger = get_clean_logger("migrations")
+
+# Import startup messages at module level to avoid inline imports
+try:
+    from app.core.startup_messages import log_migration_summary
+except ImportError:
+    # Fallback if startup_messages is not available
+    def log_migration_summary(applied_count: int, pending_count: int):
+        if pending_count == 0:
+            logger.info(f"✅ Database up to date ({applied_count} migrations applied)")
+        else:
+            logger.info(f"🔄 Running {pending_count} pending migrations...")
 
 class MigrationRunner:
+    """Migration runner that detects and runs migration files"""
+    
     def __init__(self):
         self.migrations_dir = Path(__file__).parent
-        
+    
     async def create_migrations_table(self):
         """Create migrations tracking table if it doesn't exist"""
         try:
@@ -37,21 +53,22 @@ class MigrationRunner:
                 break
         except Exception as e:
             logger.warning(f"⚠️ Could not create migrations table: {e}")
-            # This might happen if database doesn't exist yet - that's okay
     
     async def get_applied_migrations(self):
         """Get list of already applied migrations"""
         try:
             async for db in get_operational_db():
+                # Get successful migrations
                 result = await db.execute(text("""
                     SELECT migration_id FROM schema_migrations 
-                    WHERE success = TRUE 
+                    WHERE success = TRUE
                     ORDER BY applied_at
                 """))
-                return [row.migration_id for row in result.fetchall()]
+                applied_migrations = [row.migration_id for row in result.fetchall()]
+                return applied_migrations
         except Exception as e:
             logger.warning(f"⚠️ Could not get applied migrations: {e}")
-            return []  # Return empty list if table doesn't exist yet
+            return []
     
     def get_available_migrations(self):
         """Get list of available migration files"""
@@ -72,18 +89,22 @@ class MigrationRunner:
             
             # Run the upgrade function
             if hasattr(migration_module, 'upgrade'):
-                await migration_module.upgrade()
-                
-                # Record successful migration
+                # Get database connection and pass it to migration
                 async for db in get_operational_db():
+                    await migration_module.upgrade(db)
+                    
+                    # Record successful migration - update if exists
                     await db.execute(text("""
-                        INSERT INTO schema_migrations (migration_id, success) 
-                        VALUES (:migration_id, TRUE)
+                        INSERT INTO schema_migrations (migration_id, success, applied_at)
+                        VALUES (:migration_id, TRUE, NOW())
+                        ON DUPLICATE KEY UPDATE 
+                            success = TRUE, 
+                            applied_at = NOW()
                     """), {"migration_id": migration_id})
                     await db.commit()
                     break
                 
-                logger.info(f"✅ Migration {migration_id} applied successfully")
+                # Success logging handled by main loop
                 return True
             else:
                 logger.error(f"❌ Migration {migration_id} has no upgrade function")
@@ -93,13 +114,19 @@ class MigrationRunner:
             logger.error(f"❌ Migration {migration_id} failed: {e}")
             
             # Record failed migration
-            async for db in get_operational_db():
-                await db.execute(text("""
-                    INSERT INTO schema_migrations (migration_id, success) 
-                    VALUES (:migration_id, FALSE)
-                """), {"migration_id": migration_id})
-                await db.commit()
-                break
+            try:
+                async for db in get_operational_db():
+                    await db.execute(text("""
+                        INSERT INTO schema_migrations (migration_id, success, applied_at)
+                        VALUES (:migration_id, FALSE, NOW())
+                        ON DUPLICATE KEY UPDATE 
+                            success = FALSE, 
+                            applied_at = NOW()
+                    """), {"migration_id": migration_id})
+                    await db.commit()
+                    break
+            except Exception as record_error:
+                logger.error(f"❌ Could not record migration failure: {record_error}")
             
             return False
     
@@ -118,20 +145,21 @@ class MigrationRunner:
         pending = [m for m in available if m not in applied]
         
         if not pending:
-            logger.info("✅ No pending migrations")
+            log_migration_summary(len(applied), 0)
             return
         
-        logger.info(f"📋 Found {len(pending)} pending migrations: {pending}")
+        log_migration_summary(len(applied), len(pending))
         
         # Run each pending migration
         for migration_id in pending:
-            logger.info(f"🔄 Running migration: {migration_id}")
+            logger.info(f"🔄 {migration_id}")
             success = await self.run_migration(migration_id)
             if not success:
-                logger.error(f"❌ Migration failed, stopping: {migration_id}")
+                logger.error(f"❌ Migration failed: {migration_id}")
                 break
+            logger.info(f"✅ {migration_id}")
         
-        logger.info("🎉 All migrations completed!")
+        logger.info("✅ All migrations completed")
     
     async def status(self):
         """Show migration status"""

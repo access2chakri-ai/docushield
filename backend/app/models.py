@@ -21,6 +21,15 @@ class User(Base):
     user_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     email = Column(String(255), nullable=False, unique=True)
     name = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True)
+    
+    # Profile fields
+    profile_photo_url = Column(String(500), nullable=True)  # URL to generated/uploaded profile photo (legacy)
+    profile_photo_data = Column(LargeBinary, nullable=True)  # LONGBLOB - actual image data stored in DB
+    profile_photo_mime_type = Column(String(100), nullable=True)  # image/png, image/jpeg, etc.
+    profile_photo_prompt = Column(Text, nullable=True)  # Prompt used to generate the photo
+    
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     
@@ -42,6 +51,9 @@ class BronzeContract(Base):
     source = Column(String(50), default="upload")  # upload, google_drive, api
     source_metadata = Column(JSON, nullable=True)  # Google Drive ID, etc.
     status = Column(String(50), default="uploaded")  # uploaded, processing, completed, failed
+    retry_count = Column(Integer, default=0)  # Track number of retry attempts
+    last_retry_at = Column(DateTime, nullable=True)  # Track last retry timestamp
+    max_retries = Column(Integer, default=3)  # Maximum allowed retries per document
     
     # Timestamps
     created_at = Column(DateTime, default=func.now())

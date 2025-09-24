@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import ClaudeUsageStats from '../components/ClaudeUsageStats';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
 
 interface ContractAnalysis {
   contract: {
@@ -42,12 +44,22 @@ interface ContractAnalysis {
 }
 
 interface DashboardData {
-  overview: {
+  user_id: string;
+  summary: {
     total_contracts: number;
-    recent_alerts: number;
-    processing_stats: Record<string, number>;
+    processed_contracts: number;
+    high_risk_contracts: number;
   };
-  risk_distribution: Record<string, number>;
+  risk_distribution: Array<{
+    risk_level: string;
+    count: number;
+  }>;
+  recent_activity: Array<{
+    contract_id: string;
+    filename: string;
+    status: string;
+    created_at: string;
+  }>;
   provider_usage: Record<string, any>;
 }
 
@@ -57,143 +69,104 @@ export default function RiskDashboard() {
   const [selectedContract, setSelectedContract] = useState<ContractAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
+  const [user, setUser] = useState<{user_id: string; name: string; email: string} | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
+    // Initialize user from localStorage
+    const userData = localStorage.getItem('docushield_user');
+    if (userData) {
+      try {
+        setUser(JSON.parse(userData));
+      } catch (error) {
+        console.error('Failed to parse user data:', error);
+      }
+    }
+    
     fetchDashboardData();
-    // Mock contract data for demo
-    fetchMockContracts();
+    fetchContractAnalysis();
   }, []);
 
   const fetchDashboardData = async () => {
     try {
-      const response = await fetch('/api/analytics/dashboard');
+      setError(null);
+      const response = await authenticatedFetch('http://localhost:8000/api/analytics/dashboard');
       if (response.ok) {
         const data = await response.json();
         setDashboardData(data);
+        setRetryCount(0); // Reset retry count on success
+      } else {
+        throw new Error(`Dashboard API returned ${response.status}`);
       }
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error);
+      setError(`Failed to load dashboard data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchMockContracts = () => {
-    // Mock data for demonstration
-    const mockContracts: ContractAnalysis[] = [
-      {
-        contract: {
-          contract_id: '1',
-          filename: 'vendor-agreement-acme.pdf',
-          status: 'completed',
-          created_at: '2024-01-15T10:30:00Z'
-        },
-        score: {
-          overall_score: 25,
-          risk_level: 'critical',
-          category_scores: { legal: 20, financial: 30, operational: 25 }
-        },
-        findings: [
-          {
-            finding_id: 'f1',
-            type: 'liability_risk',
-            severity: 'critical',
-            title: 'Unlimited Liability Clause',
-            description: 'Contract contains unlimited liability exposure',
-            confidence: 0.9
-          },
-          {
-            finding_id: 'f2',
-            type: 'termination_risk',
-            severity: 'high',
-            title: 'Immediate Termination Rights',
-            description: 'Vendor can terminate without notice',
-            confidence: 0.8
-          }
-        ],
-        suggestions: [
-          {
-            suggestion_id: 's1',
-            type: 'renegotiate',
-            title: 'Negotiate Liability Cap',
-            description: 'Add liability limitation clause',
-            priority: 'urgent',
-            status: 'open'
-          }
-        ],
-        alerts: [
-          {
-            alert_id: 'a1',
-            type: 'risk_detected',
-            severity: 'critical',
-            title: 'High Risk Contract Detected',
-            status: 'sent',
-            created_at: '2024-01-15T10:35:00Z'
-          }
-        ]
-      },
-      {
-        contract: {
-          contract_id: '2',
-          filename: 'service-agreement-beta.pdf',
-          status: 'completed',
-          created_at: '2024-01-14T14:20:00Z'
-        },
-        score: {
-          overall_score: 65,
-          risk_level: 'medium',
-          category_scores: { legal: 70, financial: 60, operational: 65 }
-        },
-        findings: [
-          {
-            finding_id: 'f3',
-            type: 'auto_renewal',
-            severity: 'medium',
-            title: 'Auto-Renewal Clause',
-            description: 'Contract auto-renews without explicit consent',
-            confidence: 0.7
-          }
-        ],
-        suggestions: [
-          {
-            suggestion_id: 's2',
-            type: 'add_clause',
-            title: 'Add Termination Notice',
-            description: 'Include 30-day termination notice requirement',
-            priority: 'medium',
-            status: 'open'
-          }
-        ],
-        alerts: []
-      },
-      {
-        contract: {
-          contract_id: '3',
-          filename: 'partnership-agreement-gamma.pdf',
-          status: 'completed',
-          created_at: '2024-01-13T09:15:00Z'
-        },
-        score: {
-          overall_score: 85,
-          risk_level: 'low',
-          category_scores: { legal: 90, financial: 80, operational: 85 }
-        },
-        findings: [],
-        suggestions: [
-          {
-            suggestion_id: 's3',
-            type: 'optimize',
-            title: 'Review Payment Terms',
-            description: 'Consider negotiating better payment terms',
-            priority: 'low',
-            status: 'open'
-          }
-        ],
-        alerts: []
+  const fetchContractAnalysis = async () => {
+    try {
+      setError(null);
+      // Get real contract analysis data from TiDB
+      const response = await authenticatedFetch('http://localhost:8000/api/analytics/contracts/risk-analysis');
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Transform backend data to match frontend interface
+        const contractAnalyses: ContractAnalysis[] = await Promise.all(
+          data.contracts.slice(0, 5).map(async (contract: any) => {
+            // For each contract, fetch detailed analysis if available
+            try {
+              const analysisResponse = await authenticatedFetch(`http://localhost:8000/api/documents/${contract.contract_id}/analysis`);
+              
+              if (analysisResponse.ok) {
+                const analysisData = await analysisResponse.json();
+                return analysisData;
+              }
+            } catch (error) {
+              console.error(`Failed to fetch analysis for ${contract.contract_id}:`, error);
+            }
+            
+            // Fallback to basic contract info if detailed analysis fails
+            return {
+              contract: {
+                contract_id: contract.contract_id,
+                filename: contract.filename,
+                status: contract.overall_score ? 'completed' : 'processing',
+                created_at: new Date().toISOString()
+              },
+              score: contract.overall_score ? {
+                overall_score: contract.overall_score,
+                risk_level: contract.risk_level,
+                category_scores: contract.category_scores || {}
+              } : null,
+              findings: [],
+              suggestions: [],
+              alerts: []
+            };
+          })
+        );
+        
+        setContracts(contractAnalyses);
+      } else {
+        throw new Error(`Contract analysis API returned ${response.status}`);
       }
-    ];
+    } catch (error) {
+      console.error('Failed to fetch contract analysis:', error);
+      setError(`Failed to load contract analysis: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setContracts([]);
+    }
+  };
 
-    setContracts(mockContracts);
+  const handleRetry = () => {
+    setLoading(true);
+    setRetryCount(prev => prev + 1);
+    fetchDashboardData();
+    fetchContractAnalysis();
   };
 
   const getRiskColor = (level: string) => {
@@ -230,291 +203,265 @@ export default function RiskDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-dashboard-pattern relative overflow-hidden">
+      {/* Floating analytics elements */}
+      <div className="floating-document top-16 left-8 text-5xl">📊</div>
+      <div className="floating-document top-32 right-16 text-4xl">⚠️</div>
+      <div className="floating-document bottom-40 left-1/5 text-6xl">📈</div>
+      <div className="floating-document bottom-24 right-1/4 text-5xl">🔍</div>
+      
+      {/* Data processing flow */}
+      <div className="data-flow top-0 left-1/5" style={{animationDelay: '0.5s'}}></div>
+      <div className="data-flow top-0 right-1/4" style={{animationDelay: '1.5s'}}></div>
+      
+      <div className="container mx-auto px-4 py-8 relative z-10">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Risk Dashboard</h1>
-            <p className="text-gray-600">Monitor contract risks and compliance across your organization</p>
+            <p className="text-gray-600">Monitor contract risks and insights across your organization</p>
+            {user && (
+              <p className="text-sm text-gray-500">Welcome back, {user.name}</p>
+            )}
           </div>
-          <Link
-            href="/"
-            className="text-blue-600 hover:text-blue-800 flex items-center"
-          >
-            ← Back to Home
-          </Link>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-3 rounded-full bg-blue-100 text-blue-600">
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
-                </svg>
-              </div>
-              <div className="ml-4">
-                <p className="text-2xl font-bold text-gray-900">{contracts.length}</p>
-                <p className="text-sm text-gray-600">Total Contracts</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-3 rounded-full bg-red-100 text-red-600">
-                🚨
-              </div>
-              <div className="ml-4">
-                <p className="text-2xl font-bold text-gray-900">
-                  {contracts.filter(c => c.score?.risk_level === 'critical').length}
-                </p>
-                <p className="text-sm text-gray-600">Critical Risk</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-3 rounded-full bg-orange-100 text-orange-600">
-                🔴
-              </div>
-              <div className="ml-4">
-                <p className="text-2xl font-bold text-gray-900">
-                  {contracts.filter(c => c.score?.risk_level === 'high').length}
-                </p>
-                <p className="text-sm text-gray-600">High Risk</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-3 rounded-full bg-green-100 text-green-600">
-                ✅
-              </div>
-              <div className="ml-4">
-                <p className="text-2xl font-bold text-gray-900">
-                  {contracts.filter(c => c.score?.risk_level === 'low').length}
-                </p>
-                <p className="text-sm text-gray-600">Low Risk</p>
-              </div>
-            </div>
+          <div className="flex space-x-4">
+            <Link
+              href="/upload"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            >
+              📤 Upload Document
+            </Link>
+            <Link
+              href="/search"
+              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
+            >
+              🔍 Advanced Search
+            </Link>
+            <Link
+              href="/chat"
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+            >
+              💬 AI Chat
+            </Link>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <div className="flex items-center space-x-4">
-            <span className="text-sm font-medium text-gray-700">Filter by risk level:</span>
-            {['all', 'critical', 'high', 'medium', 'low'].map((level) => (
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <div className="text-red-400 mr-3">⚠️</div>
+                <div>
+                  <h3 className="text-sm font-medium text-red-800">Dashboard Error</h3>
+                  <p className="text-sm text-red-700">{error}</p>
+                </div>
+              </div>
               <button
-                key={level}
-                onClick={() => setFilter(level)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  filter === level
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                onClick={handleRetry}
+                className="bg-red-100 hover:bg-red-200 text-red-800 px-3 py-2 rounded text-sm font-medium"
+                disabled={loading}
               >
-                {level.charAt(0).toUpperCase() + level.slice(1)}
+                {loading ? '🔄 Retrying...' : '🔄 Retry'}
               </button>
-            ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Contracts Grid */}
-        <div className="grid lg:grid-cols-2 gap-8">
-          {/* Contract List */}
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Contracts</h2>
-            {filteredContracts.map((contract) => (
-              <div
-                key={contract.contract.contract_id}
-                className={`bg-white rounded-lg shadow p-6 cursor-pointer transition-all hover:shadow-lg ${
-                  selectedContract?.contract.contract_id === contract.contract.contract_id
-                    ? 'ring-2 ring-blue-500'
-                    : ''
-                }`}
-                onClick={() => setSelectedContract(contract)}
+        {/* Dashboard Stats */}
+        {dashboardData && (
+          <div className="grid md:grid-cols-3 gap-6 mb-8">
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Total Contracts</h3>
+              <p className="text-3xl font-bold text-blue-600">{dashboardData.summary?.total_contracts || 0}</p>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Processed</h3>
+              <p className="text-3xl font-bold text-green-600">{dashboardData.summary?.processed_contracts || 0}</p>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">High Risk</h3>
+              <p className="text-3xl font-bold text-red-600">{dashboardData.summary?.high_risk_contracts || 0}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Contract Analysis Grid */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-2xl font-bold text-gray-900">Contract Analysis</h2>
+            <div className="flex space-x-2">
+              {['all', 'critical', 'high', 'medium', 'low'].map(level => (
+                <button
+                  key={level}
+                  onClick={() => setFilter(level)}
+                  className={`px-3 py-1 rounded text-sm font-medium ${
+                    filter === level 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  {level === 'all' ? 'All' : level.charAt(0).toUpperCase() + level.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {filteredContracts.length === 0 ? (
+            <div className="bg-white rounded-lg shadow p-8 text-center">
+              <div className="text-gray-400 text-6xl mb-4">📄</div>
+              <h3 className="text-xl font-semibold text-gray-900 mb-2">No Contracts Found</h3>
+              <p className="text-gray-600 mb-4">
+                {filter === 'all' 
+                  ? "Upload some documents to see contract analysis here."
+                  : `No contracts with ${filter} risk level found.`}
+              </p>
+              <Link
+                href="/upload"
+                className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700"
               >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900">{contract.contract.filename}</h3>
-                    <p className="text-sm text-gray-500">
-                      {new Date(contract.contract.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  {contract.score && (
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getRiskColor(contract.score.risk_level)}`}>
-                      {getSeverityIcon(contract.score.risk_level)} {contract.score.risk_level.toUpperCase()}
-                    </span>
-                  )}
-                </div>
-
-                {contract.score && (
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">Overall Score</span>
-                      <span className="text-sm font-bold text-gray-900">{contract.score.overall_score}/100</span>
+                Upload Your First Document
+              </Link>
+            </div>
+          ) : (
+            <div className="grid lg:grid-cols-2 gap-6">
+              {filteredContracts.map((contract) => (
+                <div key={contract.contract.contract_id} className="bg-white rounded-lg shadow p-6">
+                  {/* Contract Header */}
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                        {contract.contract.filename}
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        {contract.contract.status} • {new Date(contract.contract.created_at).toLocaleDateString()}
+                      </p>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full ${
-                          contract.score.overall_score >= 80
-                            ? 'bg-green-500'
-                            : contract.score.overall_score >= 60
-                            ? 'bg-yellow-500'
-                            : contract.score.overall_score >= 40
-                            ? 'bg-orange-500'
-                            : 'bg-red-500'
-                        }`}
-                        style={{ width: `${contract.score.overall_score}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between text-sm text-gray-600">
-                  <span>{contract.findings.length} findings</span>
-                  <span>{contract.suggestions.length} suggestions</span>
-                  <span>{contract.alerts.length} alerts</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Contract Details */}
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Contract Details</h2>
-            {selectedContract ? (
-              <div className="space-y-6">
-                {/* Contract Info */}
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h3 className="text-lg font-semibold mb-4">Contract Information</h3>
-                  <div className="space-y-2">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Filename:</span>
-                      <span className="font-medium">{selectedContract.contract.filename}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Status:</span>
-                      <span className="font-medium capitalize">{selectedContract.contract.status}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Created:</span>
-                      <span className="font-medium">
-                        {new Date(selectedContract.contract.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Risk Score */}
-                {selectedContract.score && (
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <h3 className="text-lg font-semibold mb-4">Risk Analysis</h3>
-                    <div className="space-y-4">
-                      <div className="text-center">
-                        <div className="text-3xl font-bold text-gray-900 mb-1">
-                          {selectedContract.score.overall_score}/100
+                    {contract.score && (
+                      <div className="text-right">
+                        <div className="text-2xl font-bold text-gray-900 mb-1">
+                          {contract.score.overall_score}/100
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getRiskColor(selectedContract.score.risk_level)}`}>
-                          {selectedContract.score.risk_level.toUpperCase()}
+                        <span className={`px-2 py-1 rounded text-xs font-medium border ${getRiskColor(contract.score.risk_level)}`}>
+                          {contract.score.risk_level.toUpperCase()}
                         </span>
                       </div>
-                      
-                      <div className="space-y-3">
-                        {Object.entries(selectedContract.score.category_scores).map(([category, score]) => (
-                          <div key={category}>
-                            <div className="flex justify-between mb-1">
-                              <span className="text-sm font-medium text-gray-700 capitalize">{category}</span>
-                              <span className="text-sm text-gray-900">{score}/100</span>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full h-2">
-                              <div
-                                className={`h-2 rounded-full ${
-                                  score >= 80 ? 'bg-green-500' : score >= 60 ? 'bg-yellow-500' : score >= 40 ? 'bg-orange-500' : 'bg-red-500'
-                                }`}
-                                style={{ width: `${score}%` }}
-                              ></div>
+                    )}
+                  </div>
+
+                  {/* Risk Summary */}
+                  <div className="grid grid-cols-3 gap-4 mb-4 text-center">
+                    <div>
+                      <div className="text-lg font-semibold text-red-600">{contract.findings.length}</div>
+                      <div className="text-xs text-gray-500">Findings</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-blue-600">{contract.suggestions.length}</div>
+                      <div className="text-xs text-gray-500">Suggestions</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-orange-600">{contract.alerts.length}</div>
+                      <div className="text-xs text-gray-500">Alerts</div>
+                    </div>
+                  </div>
+
+                  {/* Key Findings */}
+                  {contract.findings.length > 0 && (
+                    <div className="mb-4">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2">Key Findings:</h4>
+                      <div className="space-y-2">
+                        {contract.findings.slice(0, 2).map((finding) => (
+                          <div key={finding.finding_id} className="flex items-start space-x-2">
+                            <span className="text-sm">{getSeverityIcon(finding.severity)}</span>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-900">{finding.title}</p>
+                              <p className="text-xs text-gray-600">{finding.description}</p>
                             </div>
                           </div>
                         ))}
+                        {contract.findings.length > 2 && (
+                          <p className="text-xs text-gray-500">
+                            +{contract.findings.length - 2} more findings
+                          </p>
+                        )}
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Findings */}
-                {selectedContract.findings.length > 0 && (
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <h3 className="text-lg font-semibold mb-4">Risk Findings</h3>
-                    <div className="space-y-4">
-                      {selectedContract.findings.map((finding) => (
-                        <div key={finding.finding_id} className="border-l-4 border-red-400 pl-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center mb-1">
-                                <span className="mr-2">{getSeverityIcon(finding.severity)}</span>
-                                <h4 className="font-medium text-gray-900">{finding.title}</h4>
-                              </div>
-                              <p className="text-sm text-gray-600 mb-2">{finding.description}</p>
-                              <span className="text-xs text-gray-500">
-                                Confidence: {Math.round(finding.confidence * 100)}%
-                              </span>
-                            </div>
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${getRiskColor(finding.severity)}`}>
-                              {finding.severity.toUpperCase()}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  {/* Actions */}
+                  <div className="flex space-x-2">
+                    <Link
+                      href={`/documents/${contract.contract.contract_id}/analysis`}
+                      className="flex-1 bg-blue-600 text-white px-3 py-2 rounded text-sm text-center hover:bg-blue-700"
+                    >
+                      View Analysis
+                    </Link>
+                    <Link
+                      href={`/chat?document=${contract.contract.contract_id}`}
+                      className="flex-1 bg-purple-600 text-white px-3 py-2 rounded text-sm text-center hover:bg-purple-700"
+                    >
+                      Ask Questions
+                    </Link>
                   </div>
-                )}
-
-                {/* Suggestions */}
-                {selectedContract.suggestions.length > 0 && (
-                  <div className="bg-white rounded-lg shadow p-6">
-                    <h3 className="text-lg font-semibold mb-4">Recommendations</h3>
-                    <div className="space-y-4">
-                      {selectedContract.suggestions.map((suggestion) => (
-                        <div key={suggestion.suggestion_id} className="border-l-4 border-blue-400 pl-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <h4 className="font-medium text-gray-900 mb-1">{suggestion.title}</h4>
-                              <p className="text-sm text-gray-600 mb-2">{suggestion.description}</p>
-                              <span className="text-xs text-gray-500 capitalize">
-                                Priority: {suggestion.priority}
-                              </span>
-                            </div>
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${
-                              suggestion.status === 'open' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'
-                            }`}>
-                              {suggestion.status.toUpperCase()}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="bg-white rounded-lg shadow p-12 text-center">
-                <div className="text-gray-400 mb-4">
-                  <svg className="w-16 h-16 mx-auto" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" />
-                  </svg>
                 </div>
-                <p className="text-gray-500">Select a contract to view detailed analysis</p>
-              </div>
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Claude Usage Stats */}
+        <div className="mt-8">
+          <ClaudeUsageStats />
+        </div>
+
+        {/* Contract Details Modal */}
+        {selectedContract && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-semibold">{selectedContract.contract.filename}</h3>
+                  <button
+                    onClick={() => setSelectedContract(null)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                </div>
+                
+                {/* Contract details would go here */}
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium mb-2">Risk Score</h4>
+                    {selectedContract.score && (
+                      <div className="flex items-center space-x-4">
+                        <div className="text-2xl font-bold">{selectedContract.score.overall_score}/100</div>
+                        <span className={`px-2 py-1 rounded text-sm font-medium border ${getRiskColor(selectedContract.score.risk_level)}`}>
+                          {selectedContract.score.risk_level.toUpperCase()} RISK
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div>
+                    <h4 className="font-medium mb-2">Findings ({selectedContract.findings.length})</h4>
+                    <div className="space-y-2">
+                      {selectedContract.findings.map((finding) => (
+                        <div key={finding.finding_id} className="border-l-4 border-red-500 pl-3">
+                          <div className="flex items-center space-x-2">
+                            <span>{getSeverityIcon(finding.severity)}</span>
+                            <span className="font-medium">{finding.title}</span>
+                          </div>
+                          <p className="text-sm text-gray-600">{finding.description}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

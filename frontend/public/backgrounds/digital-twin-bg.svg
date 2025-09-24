@@ -1,0 +1,158 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="digitalTwinGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fff7ed;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#fed7aa;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Digital twin network pattern -->
+    <pattern id="networkPattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
+      <rect width="200" height="200" fill="transparent"/>
+      <g opacity="0.04">
+        <!-- Network nodes -->
+        <circle cx="50" cy="50" r="4" fill="#f97316"/>
+        <circle cx="150" cy="50" r="4" fill="#ea580c"/>
+        <circle cx="100" cy="100" r="5" fill="#dc2626"/>
+        <circle cx="50" cy="150" r="4" fill="#f97316"/>
+        <circle cx="150" cy="150" r="4" fill="#ea580c"/>
+        
+        <!-- Connections -->
+        <line x1="50" y1="50" x2="150" y2="50" stroke="#f97316" stroke-width="1" opacity="0.6"/>
+        <line x1="50" y1="50" x2="100" y2="100" stroke="#f97316" stroke-width="1" opacity="0.6"/>
+        <line x1="150" y1="50" x2="100" y2="100" stroke="#ea580c" stroke-width="1" opacity="0.6"/>
+        <line x1="100" y1="100" x2="50" y2="150" stroke="#dc2626" stroke-width="1" opacity="0.6"/>
+        <line x1="100" y1="100" x2="150" y2="150" stroke="#dc2626" stroke-width="1" opacity="0.6"/>
+        <line x1="50" y1="150" x2="150" y2="150" stroke="#f97316" stroke-width="1" opacity="0.6"/>
+        
+        <!-- Data flow indicators -->
+        <circle cx="75" cy="50" r="1" fill="#ffffff">
+          <animateMotion dur="3s" repeatCount="indefinite">
+            <path d="M0,0 L75,0 L25,50 L0,100 L-25,50 Z"/>
+          </animateMotion>
+        </circle>
+        <circle cx="125" cy="75" r="1" fill="#ffffff">
+          <animateMotion dur="4s" repeatCount="indefinite">
+            <path d="M0,0 L-25,50 L25,50 L50,0 L0,-50 Z"/>
+          </animateMotion>
+        </circle>
+      </g>
+    </pattern>
+    
+    <!-- Workflow representation -->
+    <pattern id="workflowPattern" x="0" y="0" width="160" height="160" patternUnits="userSpaceOnUse">
+      <rect width="160" height="160" fill="transparent"/>
+      <g opacity="0.03">
+        <!-- Process boxes -->
+        <rect x="20" y="30" width="25" height="20" rx="3" fill="#f97316"/>
+        <rect x="60" y="30" width="25" height="20" rx="3" fill="#ea580c"/>
+        <rect x="100" y="30" width="25" height="20" rx="3" fill="#dc2626"/>
+        
+        <!-- Decision diamond -->
+        <polygon points="72,80 85,67 98,80 85,93" fill="#f59e0b"/>
+        
+        <!-- Process flow arrows -->
+        <path d="M45 40 L55 40" stroke="#f97316" stroke-width="2" marker-end="url(#arrowhead)"/>
+        <path d="M85 40 L95 40" stroke="#ea580c" stroke-width="2" marker-end="url(#arrowhead)"/>
+        <path d="M112 50 L112 60 L85 60 L85 67" stroke="#dc2626" stroke-width="2" marker-end="url(#arrowhead)"/>
+        
+        <!-- Output -->
+        <rect x="70" y="110" width="30" height="20" rx="3" fill="#16a34a"/>
+        <path d="M85 93 L85 105" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowhead)"/>
+        
+        <!-- Feedback loop -->
+        <path d="M85 130 Q120 130 120 100 Q120 70 100 70" stroke="#8b5cf6" stroke-width="1" stroke-dasharray="3,3" fill="none"/>
+      </g>
+    </pattern>
+    
+    <!-- Arrow marker -->
+    <defs>
+      <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+        <polygon points="0 0, 10 3.5, 0 7" fill="#f97316"/>
+      </marker>
+    </defs>
+    
+    <!-- Simulation waves -->
+    <radialGradient id="simulationWave" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#f97316;stop-opacity:0.1" />
+      <stop offset="100%" style="stop-color:#f97316;stop-opacity:0" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Base gradient -->
+  <rect width="1920" height="1080" fill="url(#digitalTwinGradient)"/>
+  
+  <!-- Network pattern overlay -->
+  <rect width="1920" height="1080" fill="url(#networkPattern)"/>
+  
+  <!-- Workflow pattern overlay -->
+  <rect width="1920" height="1080" fill="url(#workflowPattern)"/>
+  
+  <!-- Digital twin simulation waves -->
+  <g opacity="0.2">
+    <circle cx="480" cy="270" r="80" fill="url(#simulationWave)">
+      <animate attributeName="r" values="50;150;50" dur="6s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.2;0.05;0.2" dur="6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="1200" cy="600" r="100" fill="url(#simulationWave)">
+      <animate attributeName="r" values="70;170;70" dur="8s" begin="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.2;0.05;0.2" dur="8s" begin="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="700" cy="800" r="60" fill="url(#simulationWave)">
+      <animate attributeName="r" values="40;120;40" dur="7s" begin="4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.2;0.05;0.2" dur="7s" begin="4s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  
+  <!-- Real-time data synchronization -->
+  <g opacity="0.08">
+    <rect x="0" y="200" width="60" height="4" fill="#f97316">
+      <animateTransform attributeName="transform" type="translate" values="0 0;1920 100;0 0" dur="5s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="0" y="400" width="80" height="4" fill="#ea580c">
+      <animateTransform attributeName="transform" type="translate" values="0 0;1920 -50;0 0" dur="7s" begin="1s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="0" y="600" width="70" height="4" fill="#dc2626">
+      <animateTransform attributeName="transform" type="translate" values="0 0;1920 75;0 0" dur="6s" begin="2s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="0" y="800" width="90" height="4" fill="#f59e0b">
+      <animateTransform attributeName="transform" type="translate" values="0 0;1920 -25;0 0" dur="8s" begin="3s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+  
+  <!-- Twin synchronization indicators -->
+  <g opacity="0.06">
+    <g>
+      <circle cx="300" cy="300" r="8" fill="#f97316"/>
+      <circle cx="320" cy="320" r="8" fill="#f97316" opacity="0.7"/>
+      <line x1="300" y1="300" x2="320" y2="320" stroke="#f97316" stroke-width="2" stroke-dasharray="2,2">
+        <animate attributeName="stroke-dashoffset" values="0;4;0" dur="2s" repeatCount="indefinite"/>
+      </line>
+    </g>
+    
+    <g>
+      <circle cx="1400" cy="500" r="10" fill="#ea580c"/>
+      <circle cx="1380" cy="480" r="10" fill="#ea580c" opacity="0.7"/>
+      <line x1="1400" y1="500" x2="1380" y2="480" stroke="#ea580c" stroke-width="2" stroke-dasharray="2,2">
+        <animate attributeName="stroke-dashoffset" values="0;4;0" dur="2.5s" begin="1s" repeatCount="indefinite"/>
+      </line>
+    </g>
+    
+    <g>
+      <circle cx="800" cy="700" r="6" fill="#dc2626"/>
+      <circle cx="820" cy="680" r="6" fill="#dc2626" opacity="0.7"/>
+      <line x1="800" y1="700" x2="820" y2="680" stroke="#dc2626" stroke-width="2" stroke-dasharray="2,2">
+        <animate attributeName="stroke-dashoffset" values="0;4;0" dur="3s" begin="2s" repeatCount="indefinite"/>
+      </line>
+    </g>
+  </g>
+  
+  <!-- Process optimization paths -->
+  <g opacity="0.04" stroke="#f97316" stroke-width="3" fill="none">
+    <path d="M100 400 Q400 200 800 450 Q1200 700 1600 500">
+      <animate attributeName="stroke-dasharray" values="0 3000;150 2850;0 3000" dur="12s" repeatCount="indefinite"/>
+    </path>
+    <path d="M200 700 Q600 500 1000 750 Q1400 1000 1700 800">
+      <animate attributeName="stroke-dasharray" values="0 3000;150 2850;0 3000" dur="15s" begin="3s" repeatCount="indefinite"/>
+    </path>
+  </g>
+</svg>

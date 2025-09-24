@@ -8,18 +8,46 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - TIDB_HOST=${TIDB_HOST}
-      - TIDB_PORT=${TIDB_PORT}
-      - TIDB_USER=${TIDB_USER}
-      - TIDB_PASSWORD=${TIDB_PASSWORD}
-      - TIDB_DATABASE=${TIDB_DATABASE}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Simplified single-cluster TiDB configuration
+      - TIDB_HOST=tidb
+      - TIDB_PORT=4000
+      - TIDB_USER=root
+      - TIDB_PASSWORD=
+      - TIDB_DATABASE=docushield
+      # Use same cluster for all operations
+      - TIDB_OPERATIONAL_HOST=tidb
+      - TIDB_OPERATIONAL_PORT=4000
+      - TIDB_OPERATIONAL_USER=root
+      - TIDB_OPERATIONAL_PASSWORD=
+      - TIDB_OPERATIONAL_DATABASE=docushield
+      - TIDB_SANDBOX_HOST=tidb
+      - TIDB_SANDBOX_PORT=4000
+      - TIDB_SANDBOX_USER=root
+      - TIDB_SANDBOX_PASSWORD=
+      - TIDB_SANDBOX_DATABASE=docushield
+      - TIDB_ANALYTICS_HOST=tidb
+      - TIDB_ANALYTICS_PORT=4000
+      - TIDB_ANALYTICS_USER=root
+      - TIDB_ANALYTICS_PASSWORD=
+      - TIDB_ANALYTICS_DATABASE=docushield
+      # API Keys (set these in your environment)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your-openai-key-here}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-your-aws-access-key-id}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-your-aws-secret-access-key}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - DEFAULT_LLM_PROVIDER=bedrock
       - DEBUG=true
+      - ENVIRONMENT=development
     volumes:
       - ./backend:/app
     depends_on:
       - tidb
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend:
     build:
@@ -46,7 +74,13 @@ services:
       --store=unistore
       --path=""
       --log-level=info
+      --host=0.0.0.0
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h localhost -P 4000 -u root -e 'SELECT 1'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
 networks:
   default:

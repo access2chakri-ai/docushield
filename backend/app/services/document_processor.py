@@ -5,10 +5,22 @@ Bronze → Silver → Gold processing with full observability and resumability
 import hashlib
 import json
 import logging
+import re
+import io
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 import asyncio
-import re
+
+# Import PDF and DOCX processing libraries
+try:
+    import PyPDF2
+except ImportError:
+    PyPDF2 = None
+
+try:
+    import docx
+except ImportError:
+    docx = None
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
@@ -24,7 +36,29 @@ from app.models import (
 from app.services.risk_analyzer import risk_analyzer, DocumentType, RiskLevel
 from app.services.external_integrations import external_integrations
 from app.services.llm_factory import llm_factory, LLMTask
+from app.services.document_validator import document_validator, DocumentCategory
+from app.agents import agent_orchestrator
 from app.core.config import settings
+
+# Import OrchestrationResult for fallback scenarios
+try:
+    from app.agents.orchestrator import OrchestrationResult
+except ImportError:
+    # Fallback if orchestrator is not available
+    from dataclasses import dataclass
+    
+    @dataclass
+    class OrchestrationResult:
+        run_id: str
+        contract_id: str
+        workflow_type: str
+        status: str
+        findings: List[Dict[str, Any]]
+        suggestions: List[Dict[str, Any]]
+        summaries: List[Dict[str, Any]]
+        alerts: List[Dict[str, Any]]
+        execution_time_ms: int
+        agent_results: Dict[str, Any]
 
 logger = logging.getLogger(__name__)
 
@@ -38,16 +72,26 @@ class DocumentProcessor:
         # Using LLM Factory for multi-provider support
         self.pipeline_version = "1.0.0"
         
-        # Processing steps configuration
+        # Performance limits to prevent getting stuck
+        self.max_text_length = 500000  # 500KB of text max
+        self.max_chunks = settings.max_text_chunks  # Maximum number of chunks to process
+        self.max_processing_time = settings.max_processing_time_minutes * 60  # Convert to seconds
+        self.chunk_size = 1000  # Reasonable chunk size
+        self.max_embeddings_per_batch = 50  # Batch embeddings to prevent memory issues
+        self.max_llm_calls_per_document = settings.max_llm_calls_per_document  # LLM call limit
+        
+        # Processing steps configuration - ALL ENABLED FOR FULL TESTING
         self.processing_steps = [
-            {"name": "extract_text", "order": 1, "required": True},
-            {"name": "chunk_text", "order": 2, "required": True},
-            {"name": "generate_embeddings", "order": 3, "required": True},
-            {"name": "extract_clauses", "order": 4, "required": False},
-            {"name": "analyze_risk", "order": 5, "required": True},
-            {"name": "generate_summaries", "order": 6, "required": False},
-            {"name": "create_suggestions", "order": 7, "required": False},
-            {"name": "send_alerts", "order": 8, "required": False}
+            {"name": "validate_document", "order": 1, "required": True},  # NEW: Business validation step
+            {"name": "extract_text", "order": 2, "required": True},
+            {"name": "chunk_text", "order": 3, "required": True},
+            {"name": "generate_embeddings", "order": 4, "required": True},
+            {"name": "multi_agent_analysis", "order": 5, "required": True},
+            {"name": "extract_clauses", "order": 6, "required": True},  # NOW REQUIRED
+            {"name": "analyze_risk", "order": 7, "required": True},
+            {"name": "generate_summaries", "order": 8, "required": True},  # NOW REQUIRED
+            {"name": "create_suggestions", "order": 9, "required": True},  # NOW REQUIRED
+            {"name": "send_alerts", "order": 10, "required": True}  # NOW REQUIRED
         ]
     
     async def process_contract(
@@ -107,8 +151,8 @@ class DocumentProcessor:
                 
                 await db.commit()
                 
-                # Execute pipeline steps
-                await self._execute_pipeline(processing_run.run_id, steps_to_run, db)
+                # Execute pipeline steps  
+                await self._execute_pipeline(processing_run.run_id, steps_to_run, contract.owner_user_id, db)
                 
                 # Update run status
                 processing_run.status = "completed"
@@ -127,8 +171,10 @@ class DocumentProcessor:
                     processing_run.completed_at = datetime.utcnow()
                     await db.commit()
                 raise
+            finally:
+                break  # Prevent infinite loop in async generator
     
-    async def _execute_pipeline(self, run_id: str, steps: List[Dict], db: AsyncSession):
+    async def _execute_pipeline(self, run_id: str, steps: List[Dict], user_id: str, db: AsyncSession):
         """Execute pipeline steps with error handling and resumability"""
         
         for step_config in steps:
@@ -150,7 +196,7 @@ class DocumentProcessor:
                 await db.commit()
                 
                 # Execute step
-                step_result = await self._execute_step(step_name, run_id, db)
+                step_result = await self._execute_step(step_name, run_id, user_id, db)
                 
                 # Update step with results
                 step.status = "completed"
@@ -178,36 +224,94 @@ class DocumentProcessor:
                     await db.commit()
                     continue
     
-    async def _execute_step(self, step_name: str, run_id: str, db: AsyncSession) -> Dict[str, Any]:
+    async def _execute_step(self, step_name: str, run_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Execute individual processing step"""
         
         # Get contract for this run
         result = await db.execute(
-            select(ProcessingRun).where(ProcessingRun.run_id == run_id)
+            select(ProcessingRun).options(selectinload(ProcessingRun.contract))
+            .where(ProcessingRun.run_id == run_id)
         )
         run = result.scalar_one()
         contract_id = run.contract_id
+        user_id = run.contract.owner_user_id
         
-        if step_name == "extract_text":
-            return await self._step_extract_text(contract_id, db)
+        if step_name == "validate_document":
+            return await self._step_validate_document(contract_id, user_id, db)
+        elif step_name == "extract_text":
+            return await self._step_extract_text(contract_id, user_id, db)
         elif step_name == "chunk_text":
-            return await self._step_chunk_text(contract_id, db)
+            return await self._step_chunk_text(contract_id, user_id, db)
         elif step_name == "generate_embeddings":
-            return await self._step_generate_embeddings(contract_id, db)
+            return await self._step_generate_embeddings(contract_id, user_id, db)
+        elif step_name == "multi_agent_analysis":
+            return await self._step_multi_agent_analysis(contract_id, user_id, db)
         elif step_name == "extract_clauses":
-            return await self._step_extract_clauses(contract_id, db)
+            return await self._step_extract_clauses(contract_id, user_id, db)
         elif step_name == "analyze_risk":
-            return await self._step_analyze_risk(contract_id, db)
+            return await self._step_analyze_risk(contract_id, user_id, db)
         elif step_name == "generate_summaries":
-            return await self._step_generate_summaries(contract_id, db)
+            return await self._step_generate_summaries(contract_id, user_id, db)
         elif step_name == "create_suggestions":
-            return await self._step_create_suggestions(contract_id, db)
+            return await self._step_create_suggestions(contract_id, user_id, db)
         elif step_name == "send_alerts":
-            return await self._step_send_alerts(contract_id, db)
+            return await self._step_send_alerts(contract_id, user_id, db)
         else:
             raise ValueError(f"Unknown step: {step_name}")
     
-    async def _step_extract_text(self, contract_id: str, db: AsyncSession) -> Dict[str, Any]:
+    async def _step_validate_document(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
+        """Step 0: Validate document is suitable for business processing"""
+        
+        # Get contract
+        result = await db.execute(
+            select(BronzeContract).where(BronzeContract.contract_id == contract_id)
+        )
+        contract = result.scalar_one()
+        
+        # Extract text for validation if not already done
+        text_content = ""
+        try:
+            if contract.mime_type == "application/pdf":
+                text_content = await self._extract_pdf_text(contract.raw_bytes)
+            elif "wordprocessingml" in contract.mime_type:
+                text_content = await self._extract_docx_text(contract.raw_bytes)
+            elif "text/" in contract.mime_type:
+                text_content = contract.raw_bytes.decode('utf-8', errors='ignore')
+            else:
+                text_content = contract.raw_bytes.decode('utf-8', errors='ignore')
+        except Exception as e:
+            logger.warning(f"Text extraction failed during validation: {e}")
+            text_content = ""
+        
+        # Validate document
+        is_valid, doc_category, validation_details = await document_validator.validate_document(
+            filename=contract.filename,
+            text_content=text_content,
+            mime_type=contract.mime_type
+        )
+        
+        if not is_valid:
+            # Update contract status to indicate validation failure
+            contract.status = "validation_failed"
+            await db.commit()
+            
+            raise ValueError(
+                f"Document validation failed: {validation_details['reason']} "
+                f"(confidence: {validation_details['confidence']:.2f})"
+            )
+        
+        logger.info(f"Document validated as {doc_category.value} with confidence {validation_details['confidence']:.2f}")
+        
+        return {
+            "status": "validated",
+            "category": doc_category.value,
+            "confidence": validation_details["confidence"],
+            "filename_score": validation_details["filename_score"],
+            "content_score": validation_details["content_score"],
+            "reason": validation_details["reason"]
+        }
+    
+    async def _step_extract_text(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Step 1: Extract text from contract file"""
         
         # Get contract
@@ -270,7 +374,7 @@ class DocumentProcessor:
             "text_hash": text_hash
         }
     
-    async def _step_chunk_text(self, contract_id: str, db: AsyncSession) -> Dict[str, Any]:
+    async def _step_chunk_text(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Step 2: Chunk text for vector search"""
         
         # Get raw text
@@ -299,8 +403,9 @@ class DocumentProcessor:
         
         start = 0
         chunk_order = 0
+        max_chunks = self.max_chunks  # Prevent infinite loops
         
-        while start < len(text):
+        while start < len(text) and chunk_order < max_chunks:
             end = min(start + chunk_size, len(text))
             chunk_text = text[start:end]
             
@@ -325,6 +430,9 @@ class DocumentProcessor:
             chunk_order += 1
             start = end - overlap  # Overlap for context
         
+        # Generate tokens for analysis
+        await self._generate_tokens(contract_id, text, db)
+        
         await db.commit()
         
         return {
@@ -333,7 +441,7 @@ class DocumentProcessor:
             "total_characters": len(text)
         }
     
-    async def _step_generate_embeddings(self, contract_id: str, db: AsyncSession) -> Dict[str, Any]:
+    async def _step_generate_embeddings(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Step 3: Generate vector embeddings for chunks"""
         
         # Get chunks without embeddings
@@ -349,15 +457,39 @@ class DocumentProcessor:
             return {"status": "already_exists", "chunk_count": 0}
         
         embeddings_generated = 0
+        max_embeddings = min(len(chunks), self.max_embeddings_per_batch)
         
-        for chunk in chunks:
+        for i, chunk in enumerate(chunks):
+            if i >= max_embeddings:  # Safety limit
+                logger.warning(f"Reached max embeddings limit ({max_embeddings}) for contract {contract_id}")
+                break
+                
             try:
-                # Generate embedding
-                embedding = await self._create_embedding(chunk.chunk_text, contract_id)
+                # Generate embedding with tracking
+                embedding_result = await llm_factory.generate_embedding(
+                    text=chunk.chunk_text,
+                    task_type=LLMTask.EMBEDDING
+                )
                 
                 # Update chunk with embedding
-                chunk.embedding = embedding
-                chunk.embedding_model = "text-embedding-3-small"
+                chunk.embedding = embedding_result["embedding"]
+                chunk.embedding_model = embedding_result.get("model", "text-embedding-3-small")
+                
+                # Track LLM call
+                llm_call = LlmCall(
+                    contract_id=contract_id,
+                    user_id=user_id,
+                    provider="openai",
+                    model=chunk.embedding_model,
+                    call_type="embedding",
+                    input_tokens=embedding_result.get("input_tokens", 0),
+                    output_tokens=0,
+                    total_tokens=embedding_result.get("input_tokens", 0),
+                    estimated_cost=embedding_result.get("cost", 0.0),
+                    success=True,
+                    purpose="chunk_embedding"
+                )
+                db.add(llm_call)
                 
                 embeddings_generated += 1
                 
@@ -377,7 +509,134 @@ class DocumentProcessor:
             "total_chunks": len(chunks)
         }
     
-    async def _step_extract_clauses(self, contract_id: str, db: AsyncSession) -> Dict[str, Any]:
+    async def _step_multi_agent_analysis(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
+        """Step 4: Multi-agent comprehensive analysis"""
+        
+        logger.info(f"Starting multi-agent analysis for contract {contract_id}")
+        
+        # Get contract and text
+        result = await db.execute(
+            select(BronzeContract).options(selectinload(BronzeContract.text_raw))
+            .where(BronzeContract.contract_id == contract_id)
+        )
+        contract = result.scalar_one()
+        
+        if not contract.text_raw:
+            logger.error(f"No text available for multi-agent analysis for contract {contract_id}")
+            raise ValueError("No text available for multi-agent analysis")
+        
+        logger.info(f"Found contract text for {contract_id}, starting agent orchestrator")
+        
+        # Run multi-agent analysis using new orchestrator (with error handling)
+        try:
+            logger.info(f"Calling agent orchestrator for contract {contract_id}")
+            workflow_result = await agent_orchestrator.run_comprehensive_analysis(
+                contract_id=contract_id,
+                user_id=user_id,
+                query="Perform comprehensive document analysis including risk assessment, clause extraction, and business recommendations",
+                selected_agents=["simple_analyzer", "search_agent", "clause_analyzer"],  # USE ALL AGENTS
+                timeout_seconds=300  # Longer timeout for full analysis
+            )
+            logger.info(f"Agent orchestrator completed for contract {contract_id}")
+        except Exception as agent_error:
+            logger.error(f"Agent orchestrator failed: {agent_error}")
+            # Create a fallback result structure
+            workflow_result = OrchestrationResult(
+                run_id=f"fallback_{contract_id}",
+                contract_id=contract_id,
+                user_id=user_id,
+                query=None,
+                overall_success=False,
+                overall_confidence=0.5,
+                agent_results=[],
+                consolidated_findings=[{
+                    "type": "processing_error",
+                    "title": "Agent analysis temporarily unavailable",
+                    "description": f"Multi-agent analysis failed: {str(agent_error)}",
+                    "severity": "medium",
+                    "confidence": 0.5,
+                    "source_agent": "fallback"
+                }],
+                consolidated_recommendations=["Manual review recommended due to agent system error"],
+                execution_time_ms=0.0,
+                total_llm_calls=0,
+                workflow_version="fallback_2.0.0"
+            )
+        
+        # Store consolidated findings as GoldFindings
+        findings_created = 0
+        for finding in workflow_result.consolidated_findings[:10]:  # Limit to top 10
+            try:
+                gold_finding = GoldFinding(
+                    contract_id=contract_id,
+                    finding_type=finding.get("type", "agent_finding"),
+                    severity=finding.get("severity", "medium"),
+                    title=finding.get("title", "Agent finding")[:200],
+                    description=finding.get("description", json.dumps(finding)),
+                    confidence=finding.get("confidence", workflow_result.overall_confidence),
+                    detection_method=finding.get("source_agent", "orchestrator"),
+                    model_version=workflow_result.workflow_version
+                )
+                db.add(gold_finding)
+                findings_created += 1
+            except Exception as e:
+                logger.warning(f"Failed to save agent finding: {e}")
+        
+        # Store or update contract score (simplified for now)
+        result = await db.execute(
+            select(GoldContractScore).where(GoldContractScore.contract_id == contract_id)
+        )
+        existing_score = result.scalar_one_or_none()
+        
+        # Calculate risk score based on findings
+        risk_score = min(100, max(0, int(workflow_result.overall_confidence * 100)))
+        risk_level = "high" if workflow_result.overall_confidence > 0.8 else "medium" if workflow_result.overall_confidence > 0.5 else "low"
+        
+        if existing_score:
+            existing_score.overall_score = risk_score
+            existing_score.risk_level = risk_level
+            existing_score.confidence = workflow_result.overall_confidence
+            existing_score.last_updated = datetime.utcnow()
+        else:
+            score = GoldContractScore(
+                contract_id=contract_id,
+                overall_score=risk_score,
+                risk_level=risk_level,
+                category_scores={},  # Could be populated from specific risk analysis
+                scoring_model_version=workflow_result.workflow_version,
+                confidence=workflow_result.overall_confidence
+            )
+            db.add(score)
+        
+        # Create executive summary from consolidated recommendations
+        summary_content = f"Comprehensive analysis completed using {len(workflow_result.agent_results)} specialized agents. " + \
+                         " ".join(workflow_result.consolidated_recommendations[:3])
+        
+        summary = GoldSummary(
+            contract_id=contract_id,
+            summary_type="agent_orchestrator",
+            title="Agent Orchestrator Summary",
+            content=summary_content,
+            key_points=workflow_result.consolidated_recommendations[:5],
+            word_count=len(summary_content.split()),
+            model_version=workflow_result.workflow_version
+        )
+        db.add(summary)
+        
+        await db.commit()
+        
+        return {
+            "status": "completed",
+            "overall_risk_score": risk_score,
+            "risk_level": risk_level,
+            "confidence": workflow_result.overall_confidence,
+            "findings_created": findings_created,
+            "execution_time_ms": workflow_result.execution_time_ms,
+            "agents_used": len(workflow_result.agent_results),
+            "run_id": workflow_result.run_id
+        }
+    
+    async def _step_extract_clauses(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Step 4: Extract and identify contract clauses"""
         
         # Get contract text
@@ -388,17 +647,36 @@ class DocumentProcessor:
         )
         text_raw = result.scalar_one()
         
-        # Check if clauses already extracted
+        # Check if clauses already extracted and clean up any duplicates
         result = await db.execute(
             select(SilverClauseSpan).where(SilverClauseSpan.contract_id == contract_id)
         )
         existing_clauses = result.scalars().all()
         
         if existing_clauses:
-            return {"status": "already_exists", "clause_count": len(existing_clauses)}
+            # Check for and remove duplicates
+            seen_positions = set()
+            duplicates_to_remove = []
+            
+            for clause in existing_clauses:
+                position_key = f"{clause.start_offset}-{clause.end_offset}-{clause.clause_type}"
+                if position_key in seen_positions:
+                    duplicates_to_remove.append(clause)
+                    logger.warning(f"Found duplicate clause span: {position_key}")
+                else:
+                    seen_positions.add(position_key)
+            
+            # Remove duplicates if found
+            if duplicates_to_remove:
+                for duplicate in duplicates_to_remove:
+                    await db.delete(duplicate)
+                await db.commit()
+                logger.info(f"Removed {len(duplicates_to_remove)} duplicate clause spans for contract {contract_id}")
+            
+            return {"status": "already_exists", "clause_count": len(existing_clauses) - len(duplicates_to_remove)}
         
-        # Use AI to extract clauses
-        clauses = await self._extract_contract_clauses(text_raw.raw_text, contract_id)
+        # Use AI to extract clauses with comprehensive analysis
+        clauses = await self._extract_contract_clauses_comprehensive(text_raw.raw_text, contract_id, user_id)
         
         clause_count = 0
         for clause_data in clauses:
@@ -431,7 +709,7 @@ class DocumentProcessor:
             "clause_count": clause_count
         }
     
-    async def _step_analyze_risk(self, contract_id: str, db: AsyncSession) -> Dict[str, Any]:
+    async def _step_analyze_risk(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Step 5: Analyze contract risks and generate scores"""
         
         # Get contract and text
@@ -499,7 +777,7 @@ class DocumentProcessor:
             "findings_created": findings_created
         }
     
-    async def _step_generate_summaries(self, contract_id: str, db: AsyncSession) -> Dict[str, Any]:
+    async def _step_generate_summaries(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Step 6: Generate executive and detailed summaries"""
         
         # Get contract text
@@ -523,7 +801,7 @@ class DocumentProcessor:
         # Generate executive summary
         try:
             exec_summary = await self._generate_executive_summary(
-                contract.text_raw.raw_text, contract_id
+                contract.text_raw.raw_text, contract_id, user_id
             )
             
             summary = GoldSummary(
@@ -548,7 +826,7 @@ class DocumentProcessor:
             "summaries_created": summaries_created
         }
     
-    async def _step_create_suggestions(self, contract_id: str, db: AsyncSession) -> Dict[str, Any]:
+    async def _step_create_suggestions(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Step 7: Create actionable suggestions"""
         
         # Get contract findings
@@ -584,7 +862,7 @@ class DocumentProcessor:
             "suggestions_created": suggestions_created
         }
     
-    async def _step_send_alerts(self, contract_id: str, db: AsyncSession) -> Dict[str, Any]:
+    async def _step_send_alerts(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Step 8: Send alerts for high-risk contracts"""
         
         # Get contract score
@@ -617,11 +895,29 @@ class DocumentProcessor:
         
         # Send external alerts
         try:
+            # Get findings and suggestions for comprehensive alert
+            result = await db.execute(
+                select(GoldFinding).where(GoldFinding.contract_id == contract_id)
+                .order_by(GoldFinding.created_at.desc()).limit(5)
+            )
+            findings = result.scalars().all()
+            
+            result = await db.execute(
+                select(GoldSuggestion).where(GoldSuggestion.contract_id == contract_id)
+                .order_by(GoldSuggestion.created_at.desc()).limit(3)
+            )
+            suggestions = result.scalars().all()
+            
             risk_analysis = {
                 "overall_risk_level": score.risk_level,
                 "overall_risk_score": score.overall_score / 100,
-                "identified_risks": [],  # Would be populated from findings
-                "recommendations": []  # Would be populated from suggestions
+                "category_scores": score.category_scores or {},
+                "identified_risks": [f.title for f in findings],
+                "risk_descriptions": [f.description for f in findings],
+                "recommendations": [s.title for s in suggestions],
+                "contract_id": contract_id,
+                "file_size": contract.file_size,
+                "processing_completed": True
             }
             
             alert_results = await external_integrations.send_risk_alert(
@@ -649,9 +945,10 @@ class DocumentProcessor:
     # Helper methods
     async def _extract_pdf_text(self, content: bytes) -> str:
         """Extract text from PDF bytes"""
+        if PyPDF2 is None:
+            raise ImportError("PyPDF2 is required for PDF text extraction")
+        
         try:
-            import io
-            import PyPDF2
             
             pdf_file = io.BytesIO(content)
             reader = PyPDF2.PdfReader(pdf_file)
@@ -664,9 +961,10 @@ class DocumentProcessor:
     
     async def _extract_docx_text(self, content: bytes) -> str:
         """Extract text from DOCX bytes"""
+        if docx is None:
+            raise ImportError("python-docx is required for DOCX text extraction")
+        
         try:
-            import io
-            import docx
             
             docx_file = io.BytesIO(content)
             doc = docx.Document(docx_file)
@@ -677,6 +975,114 @@ class DocumentProcessor:
         except Exception as e:
             raise Exception(f"Failed to extract DOCX text: {e}")
     
+    async def _extract_contract_clauses_comprehensive(self, text: str, contract_id: str, user_id: str) -> List[Dict[str, Any]]:
+        """Extract clauses using comprehensive AI analysis with all clause types"""
+        try:
+            clause_prompt = f"""
+            Analyze this contract document and extract ALL key clauses. For each clause found, provide:
+            
+            CLAUSE TYPES TO FIND:
+            - liability: Liability and indemnification clauses
+            - termination: Termination and cancellation clauses  
+            - renewal: Renewal and extension clauses
+            - payment: Payment terms and financial clauses
+            - intellectual_property: IP ownership and licensing
+            - confidentiality: Non-disclosure and confidentiality
+            - governing_law: Governing law and jurisdiction
+            - dispute_resolution: Dispute resolution and arbitration
+            - force_majeure: Force majeure and extraordinary circumstances
+            - warranties: Warranties and representations
+            - limitation: Limitation of liability clauses
+            - performance: Performance standards and SLAs
+            
+            Document text (first 8000 characters):
+            {text[:8000]}
+            
+            Return as JSON array with this exact format:
+            [{{
+                "type": "clause_type",
+                "name": "Brief clause name",
+                "text": "Full clause text",
+                "start_offset": 0,
+                "end_offset": 100,
+                "confidence": 0.95,
+                "risk_indicators": ["risk1", "risk2"],
+                "attributes": {{"key": "value"}}
+            }}]
+            """
+            
+            result = await llm_factory.generate_completion(
+                prompt=clause_prompt,
+                task_type=LLMTask.ANALYSIS,
+                max_tokens=2000,
+                temperature=0.1
+            )
+            
+            # Track LLM call
+            llm_call = LlmCall(
+                contract_id=contract_id,
+                user_id=user_id,
+                provider="openai",
+                model="gpt-4",
+                call_type="completion",
+                input_tokens=result.get("input_tokens", 0),
+                output_tokens=result.get("output_tokens", 0),
+                total_tokens=result.get("total_tokens", 0),
+                estimated_cost=result.get("cost", 0.0),
+                success=True,
+                purpose="clause_extraction"
+            )
+            
+            async for db in get_operational_db():
+                try:
+                    db.add(llm_call)
+                    await db.commit()
+                finally:
+                    break  # Prevent infinite loop
+            
+            try:
+                clauses = json.loads(result["content"])
+                return clauses if isinstance(clauses, list) else []
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse AI clause extraction response")
+                return []
+                
+        except Exception as e:
+            logger.error(f"Comprehensive clause extraction failed: {e}")
+            return []
+
+    async def _generate_tokens(self, contract_id: str, text: str, db: AsyncSession):
+        """Generate and store tokens for search and analysis"""
+        try:
+            # Simple tokenization - extract meaningful words
+            words = re.findall(r'\b[a-zA-Z]{3,}\b', text.lower())
+            
+            # Count word frequencies
+            word_freq = {}
+            for i, word in enumerate(words):
+                if word not in word_freq:
+                    word_freq[word] = {"count": 0, "positions": []}
+                word_freq[word]["count"] += 1
+                word_freq[word]["positions"].append(i)
+            
+            # Store top 100 most frequent tokens
+            sorted_words = sorted(word_freq.items(), key=lambda x: x[1]["count"], reverse=True)
+            
+            for word, data in sorted_words[:100]:
+                token = Token(
+                    contract_id=contract_id,
+                    token_text=word,
+                    token_type="word",
+                    position=data["positions"][0],  # First occurrence
+                    frequency=data["count"]
+                )
+                db.add(token)
+                
+            logger.info(f"Generated {min(100, len(sorted_words))} tokens for contract {contract_id}")
+            
+        except Exception as e:
+            logger.warning(f"Token generation failed: {e}")
+
     async def _create_embedding(self, text: str, contract_id: str) -> List[float]:
         """Create vector embedding with LLM call tracking"""
         try:
@@ -733,7 +1139,7 @@ class DocumentProcessor:
             logger.error(f"Clause extraction failed: {e}")
             return []
     
-    async def _generate_executive_summary(self, text: str, contract_id: str) -> Dict[str, Any]:
+    async def _generate_executive_summary(self, text: str, contract_id: str, user_id: str) -> Dict[str, Any]:
         """Generate executive summary using AI"""
         try:
             summary_prompt = f"""

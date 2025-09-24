@@ -76,8 +76,18 @@ export default function DemoPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-documents-pattern relative overflow-hidden">
+      {/* Floating demo elements */}
+      <div className="floating-document top-20 left-8 text-6xl">🎯</div>
+      <div className="floating-document top-40 right-10 text-5xl">⚡</div>
+      <div className="floating-document bottom-32 left-1/4 text-4xl">🚀</div>
+      <div className="floating-document bottom-16 right-1/5 text-5xl">✨</div>
+      
+      {/* Demo processing flow */}
+      <div className="data-flow top-0 left-1/5" style={{animationDelay: '0s'}}></div>
+      <div className="data-flow top-0 right-1/3" style={{animationDelay: '1.5s'}}></div>
+      
+      <div className="container mx-auto px-4 py-8 relative z-10">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-8">
             <div>
