@@ -1,9 +1,9 @@
-# DocuShield - TiDB Hackathon Submission
+# DocuShield -
 
 > **Multi-Step Agentic Document Analysis Platform**  
 > Showcasing TiDB Serverless Vector Search + LLM Chains + External APIs
 
-## 🏆 Hackathon Requirements Met
+## Requirements Met
 
 ✅ **TiDB Serverless Integration** - Full vector search capabilities  
 ✅ **Multi-Step Agentic Workflow** - 5-step automated process  
@@ -220,58 +220,6 @@ CREATE TABLE agent_runs (
 );
 ```
 
-## 📊 Hackathon Judging Criteria
-
-### Technological Implementation (35 points)
-- ✅ **TiDB Vector Search** - Full implementation with hybrid search
-- ✅ **Quality Code** - Clean architecture, error handling, type safety
-- ✅ **Tool Integration** - Proper use of FastAPI, Next.js, OpenAI APIs
-
-### Creativity/Quality of Idea (25 points)  
-- ✅ **Novel Approach** - Multi-step agent vs simple Q&A
-- ✅ **Real Innovation** - Transparent reasoning process
-- ✅ **Practical Value** - Useful for document analysis workflows
-
-### User Experience (20 points)
-- ✅ **Intuitive Interface** - Clear upload → chat → results flow
-- ✅ **Real-time Feedback** - Step-by-step progress visualization  
-- ✅ **Professional Design** - Modern, responsive UI with Tailwind CSS
-
-### Documentation Quality (10 points)
-- ✅ **Complete README** - Clear setup and usage instructions
-- ✅ **Code Comments** - Well-documented implementation
-- ✅ **Architecture Docs** - Clear system design explanation
-
-### Demo Video Quality (10 points)
-- ✅ **Functional Demo** - Shows complete workflow
-- ✅ **Clear Explanation** - Narrates each step of the process
-- ✅ **Under 4 Minutes** - Concise but comprehensive
-
-## 🎥 Demo Video Script
-
-**[0:00-0:30] Introduction**
-- "Hi! I'm demonstrating DocuShield, a multi-step document analysis agent built for the TiDB hackathon..."
-
-**[0:30-1:30] Upload & Ingestion**  
-- Show document upload
-- Explain vector embedding creation
-- Show TiDB storage
-
-**[1:30-2:30] Agent Workflow**
-- Ask a question in chat
-- Show 5-step process visualization
-- Highlight TiDB vector search
-
-**[2:30-3:30] Results & Analysis**
-- Show comprehensive answer
-- Explain LLM reasoning chain  
-- Highlight external API integration
-
-**[3:30-4:00] Technical Highlights**
-- TiDB Serverless capabilities
-- Multi-step agent innovation
-- Production-ready architecture
-
 ## 🚧 Development Notes
 
 ### Removed Over-Engineering
@@ -339,6 +287,3 @@ GET /api/runs
 - **Email**: your-email@example.com
 
 ---
-
-**Built with ❤️ for the TiDB Hackathon**  
-*Showcasing the power of TiDB Serverless + Multi-Step AI Agents*
