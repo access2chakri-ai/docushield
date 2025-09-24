@@ -14,7 +14,7 @@ from app.database import init_db
 from app.core.config import settings
 
 # Routers
-from app.routers import auth, documents, search, health, chat, analytics, llm, integrations, digital_twin, monitoring
+from app.routers import auth, documents, search, health, chat, analytics, llm, integrations, digital_twin, monitoring, providers, profile
 
 # Import dependencies that were previously imported inline
 from migrations.migration_runner import MigrationRunner
@@ -65,9 +65,11 @@ app.include_router(search.router)
 app.include_router(chat.router)
 app.include_router(analytics.router)
 app.include_router(llm.router)
+app.include_router(providers.router)
 app.include_router(integrations.router)
 app.include_router(digital_twin.router)
 app.include_router(monitoring.router)
+app.include_router(profile.router)
 
 # =============================================================================
 # STARTUP & HEALTH ENDPOINTS

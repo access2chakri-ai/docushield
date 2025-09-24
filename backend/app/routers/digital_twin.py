@@ -39,12 +39,33 @@ async def get_workflow_insights(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Digital twin insights failed: {str(e)}")
 
-@router.post("/simulations")
+@router.post("/simulate")
 async def create_simulation(
     request: SimulationRequest,
     current_user = Depends(get_current_active_user)
 ):
     """Create a new Digital Twin simulation"""
+    try:
+        # Create simulation
+        simulation_result = await digital_twin_service.create_simulation(
+            scenario_name=request.scenario_name,
+            description=request.description,
+            document_ids=request.document_ids,
+            parameter_changes=request.parameter_changes,
+            user_id=current_user.user_id
+        )
+        
+        return simulation_result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Simulation creation failed: {str(e)}")
+
+@router.post("/simulations")
+async def create_simulation_legacy(
+    request: SimulationRequest,
+    current_user = Depends(get_current_active_user)
+):
+    """Create a new Digital Twin simulation (legacy endpoint)"""
     try:
         # Create simulation
         simulation_result = await digital_twin_service.create_simulation(

@@ -3,12 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-
-interface User {
-  user_id: string;
-  email: string;
-  name: string;
-}
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
 
 interface SearchResult {
   document_id: string;
@@ -18,7 +13,13 @@ interface SearchResult {
   relevance_score: number;
   match_type: string;
   highlights: string[];
-  metadata: any;
+  metadata: {
+    risk_level?: string;
+    max_amount?: number;
+    clause_type?: string;
+    created_at?: string;
+    file_size?: number;
+  };
 }
 
 interface SearchResponse {
@@ -27,7 +28,7 @@ interface SearchResponse {
   total_results: number;
   search_time_ms: number;
   search_type: string;
-  applied_filters: any;
+  applied_filters: Record<string, any>;
   suggestions: string[];
 }
 
@@ -36,42 +37,32 @@ export default function AdvancedSearchPage() {
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState('hybrid');
   const [documentFilter, setDocumentFilter] = useState('all');
-  const [results, setResults] = useState<SearchResponse | null>(null);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [documentStats, setDocumentStats] = useState<any>(null);
-  const [exampleQueries] = useState([
-    "Find contracts with auto-renewal clauses",
-    "Show invoices above $50k missing PO reference",
-    "High risk liability agreements",
-    "Recent contract documents",
-    "Termination clauses in service agreements"
-  ]);
-  
   const router = useRouter();
 
   useEffect(() => {
     // Check authentication
-    const userData = localStorage.getItem('docushield_user');
-    if (!userData) {
+    if (!isAuthenticated()) {
       router.push('/auth');
       return;
     }
 
-    const currentUser: User = JSON.parse(userData);
-    setUser(currentUser);
-    
-    // Load search suggestions
-    loadSuggestions(currentUser.user_id);
+    const currentUser = getUserData();
+    if (currentUser) {
+      setUser(currentUser);
+      loadSuggestions();
+    }
   }, [router]);
 
-  const loadSuggestions = async (userId: string) => {
+  const loadSuggestions = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/api/search/suggestions?user_id=${userId}`);
+      const response = await authenticatedFetch('http://localhost:8000/api/search/suggestions');
       if (response.ok) {
         const data = await response.json();
-        setSuggestions(data.suggestions);
-        setDocumentStats(data.document_stats);
+        setSuggestions(data.suggestions || []);
       }
     } catch (error) {
       console.error('Failed to load suggestions:', error);
@@ -79,41 +70,44 @@ export default function AdvancedSearchPage() {
   };
 
   const performSearch = async () => {
-    if (!query.trim() || !user) return;
+    if (!query.trim() || isLoading) return;
 
     setIsLoading(true);
-    
+
     try {
-      const response = await fetch(`http://localhost:8000/api/search/advanced?user_id=${user.user_id}`, {
+      const response = await authenticatedFetch('http://localhost:8000/api/search/advanced', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          query: query,
+          query: query.trim(),
           search_type: searchType,
           document_filter: documentFilter,
-          limit: 20
+          limit: 20,
+          filters: {}
         })
       });
 
       if (!response.ok) {
-        throw new Error('Search failed');
+        throw new Error(`Search failed: ${response.statusText}`);
       }
 
-      const searchResponse: SearchResponse = await response.json();
-      setResults(searchResponse);
+      const searchData: SearchResponse = await response.json();
+      setSearchResponse(searchData);
+      setResults(searchData.results || []);
 
     } catch (error) {
       console.error('Search error:', error);
-      setResults({
-        query: query,
+      setResults([]);
+      setSearchResponse({
+        query,
         results: [],
         total_results: 0,
         search_time_ms: 0,
         search_type: searchType,
         applied_filters: {},
-        suggestions: ['Search failed. Please try again.']
+        suggestions: [`Search failed: ${error}. Please check your connection and try again.`]
       });
     } finally {
       setIsLoading(false);
@@ -127,58 +121,57 @@ export default function AdvancedSearchPage() {
     }
   };
 
-  const handleExampleQuery = (exampleQuery: string) => {
-    setQuery(exampleQuery);
-    // Auto-detect search type based on query
-    if (exampleQuery.toLowerCase().includes('contract')) {
-      setDocumentFilter('contracts');
-    } else if (exampleQuery.toLowerCase().includes('invoice')) {
-      setDocumentFilter('invoices');
-    } else if (exampleQuery.toLowerCase().includes('risk')) {
-      setDocumentFilter('high_risk');
-    }
-  };
-
-  const getRiskColor = (riskLevel: string) => {
-    switch (riskLevel?.toLowerCase()) {
-      case 'critical': return 'text-red-600 bg-red-100';
-      case 'high': return 'text-orange-600 bg-orange-100';
-      case 'medium': return 'text-yellow-600 bg-yellow-100';
-      case 'low': return 'text-green-600 bg-green-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
-  };
-
-  const getDocumentTypeIcon = (docType: string) => {
-    switch (docType?.toLowerCase()) {
+  const getResultIcon = (documentType: string) => {
+    switch (documentType.toLowerCase()) {
       case 'contract': return '📄';
-      case 'invoice': return '💰';
-      case 'policy': return '📋';
-      case 'clause': return '📝';
+      case 'invoice': return '🧾';
+      case 'clause': return '📋';
+      case 'policy': return '📑';
       default: return '📄';
     }
   };
 
+  const getRiskColor = (riskLevel?: string) => {
+    switch (riskLevel?.toLowerCase()) {
+      case 'critical': return 'bg-red-100 text-red-800';
+      case 'high': return 'bg-orange-100 text-orange-800';
+      case 'medium': return 'bg-yellow-100 text-yellow-800';
+      case 'low': return 'bg-green-100 text-green-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const formatAmount = (amount?: number) => {
+    if (!amount) return '';
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD'
+    }).format(amount);
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      <div className="container mx-auto px-4 py-8 max-w-7xl">
+    <div className="min-h-screen bg-search-pattern relative overflow-hidden">
+      {/* Floating search elements */}
+      <div className="floating-document top-24 left-12 text-6xl">🔍</div>
+      <div className="floating-document top-40 right-10 text-5xl">📊</div>
+      <div className="floating-document bottom-36 left-1/6 text-4xl">⚡</div>
+      <div className="floating-document bottom-24 right-1/3 text-5xl">🎯</div>
+      
+      {/* Search processing flow */}
+      <div className="data-flow top-0 left-1/4" style={{animationDelay: '0.5s'}}></div>
+      <div className="data-flow top-0 right-1/6" style={{animationDelay: '2.5s'}}></div>
+      
+      <div className="container mx-auto px-4 py-8 max-w-6xl relative z-10">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center space-x-4">
-            <img 
-              src="/docushield-logo-svg.svg" 
-              alt="DocuShield Logo" 
-              className="h-10 w-auto"
-            />
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Advanced Document Search</h1>
-              <p className="text-gray-600 mt-2">
-                Intelligent search with semantic understanding and risk analysis
-              </p>
-              {user && (
-                <p className="text-sm text-gray-500">Logged in as: {user.name}</p>
-              )}
-            </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">🔍 Advanced Search</h1>
+            <p className="text-gray-600">
+              Intelligent document search with semantic understanding and complex queries
+            </p>
+            {user && (
+              <p className="text-sm text-gray-500">Logged in as: {user.name}</p>
+            )}
           </div>
           <div className="flex space-x-4">
             <Link
@@ -188,16 +181,10 @@ export default function AdvancedSearchPage() {
               📄 My Documents
             </Link>
             <Link
-              href="/upload"
+              href="/chat"
               className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
             >
-              📤 Upload
-            </Link>
-            <Link
-              href="/chat"
-              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
-            >
-              💬 Chat
+              💬 AI Chat
             </Link>
             <Link
               href="/"
@@ -208,153 +195,145 @@ export default function AdvancedSearchPage() {
           </div>
         </div>
 
-        {/* Document Statistics */}
-        {documentStats && (
-          <div className="grid grid-cols-4 gap-4 mb-6">
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="text-2xl font-bold text-blue-600">{documentStats.total_documents}</div>
-              <div className="text-sm text-gray-600">Total Documents</div>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="text-2xl font-bold text-green-600">{documentStats.contracts}</div>
-              <div className="text-sm text-gray-600">Contracts</div>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="text-2xl font-bold text-yellow-600">{documentStats.invoices}</div>
-              <div className="text-sm text-gray-600">Invoices</div>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="text-2xl font-bold text-red-600">{documentStats.high_risk}</div>
-              <div className="text-sm text-gray-600">High Risk</div>
-            </div>
-          </div>
-        )}
-
         {/* Search Interface */}
-        <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
-          {/* Search Bar */}
-          <div className="flex space-x-4 mb-4">
-            <div className="flex-1">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Try: 'Find contracts with auto-renewal clauses' or 'Show invoices above $50k missing PO reference'"
-                className="w-full p-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
-                disabled={isLoading}
-              />
-            </div>
-            <button
-              onClick={performSearch}
-              disabled={isLoading || !query.trim()}
-              className={`px-8 py-4 rounded-lg font-medium text-lg ${
-                isLoading || !query.trim()
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700'
-              } text-white`}
-            >
-              {isLoading ? '🔍 Searching...' : 'Search'}
-            </button>
-          </div>
-
-          {/* Search Options */}
-          <div className="flex space-x-6 mb-4">
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
+          <div className="space-y-4">
+            {/* Search Input */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Search Type</label>
-              <select
-                value={searchType}
-                onChange={(e) => setSearchType(e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="hybrid">🔗 Hybrid (Semantic + Keyword)</option>
-                <option value="semantic">🧠 Semantic (AI Understanding)</option>
-                <option value="keyword">🔤 Keyword (Text Matching)</option>
-                <option value="structured">📊 Structured (Pattern Matching)</option>
-              </select>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Document Type</label>
-              <select
-                value={documentFilter}
-                onChange={(e) => setDocumentFilter(e.target.value)}
-                className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="all">📄 All Documents</option>
-                <option value="contracts">📄 Contracts</option>
-                <option value="invoices">💰 Invoices</option>
-                <option value="policies">📋 Policies</option>
-                <option value="high_risk">⚠️ High Risk</option>
-                <option value="recent">🕒 Recent</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Example Queries */}
-          <div className="border-t pt-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">💡 Example Queries:</h3>
-            <div className="flex flex-wrap gap-2">
-              {exampleQueries.map((example, index) => (
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Search Query
+              </label>
+              <div className="flex space-x-4">
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Try: 'Find contracts with auto-renewal clauses' or 'Show invoices above $50k missing PO reference'"
+                  className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isLoading}
+                />
                 <button
-                  key={index}
-                  onClick={() => handleExampleQuery(example)}
-                  className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-blue-100 hover:text-blue-700 transition-colors"
+                  onClick={performSearch}
+                  disabled={isLoading || !query.trim()}
+                  className={`px-6 py-3 rounded-lg font-medium ${
+                    isLoading || !query.trim()
+                      ? 'bg-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 hover:bg-blue-700'
+                  } text-white`}
                 >
-                  {example}
+                  {isLoading ? '🔍 Searching...' : '🔍 Search'}
                 </button>
-              ))}
+              </div>
+            </div>
+
+            {/* Search Options */}
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Search Type
+                </label>
+                <select
+                  value={searchType}
+                  onChange={(e) => setSearchType(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isLoading}
+                >
+                  <option value="hybrid">Hybrid (Semantic + Keywords)</option>
+                  <option value="semantic">Semantic Search</option>
+                  <option value="keyword">Keyword Search</option>
+                  <option value="structured">Structured Query</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Document Filter
+                </label>
+                <select
+                  value={documentFilter}
+                  onChange={(e) => setDocumentFilter(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isLoading}
+                >
+                  <option value="all">All Documents</option>
+                  <option value="contracts">Contracts Only</option>
+                  <option value="invoices">Invoices Only</option>
+                  <option value="policies">Policies Only</option>
+                  <option value="high_risk">High Risk Only</option>
+                  <option value="recent">Recent Documents</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Example Queries */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                💡 Example Queries (click to try):
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {suggestions.slice(0, 5).map((suggestion, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setQuery(suggestion)}
+                    className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
+                    disabled={isLoading}
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Search Results */}
-        {results && (
+        {searchResponse && (
           <div className="bg-white rounded-lg shadow-lg">
             {/* Results Header */}
-            <div className="p-6 border-b">
-              <div className="flex items-center justify-between">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex justify-between items-center">
                 <div>
                   <h2 className="text-xl font-semibold text-gray-900">
-                    Search Results for "{results.query}"
+                    Search Results for "{searchResponse.query}"
                   </h2>
-                  <p className="text-gray-600 mt-1">
-                    {results.total_results} results found in {results.search_time_ms.toFixed(0)}ms 
-                    using {results.search_type} search
+                  <p className="text-sm text-gray-500">
+                    {searchResponse.total_results} results found in {searchResponse.search_time_ms.toFixed(0)}ms
+                    • Search type: {searchResponse.search_type}
                   </p>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-500">
-                    Search Type: <span className="font-medium">{results.search_type}</span>
-                  </div>
                 </div>
               </div>
             </div>
 
             {/* Results List */}
             <div className="divide-y divide-gray-200">
-              {results.results.length > 0 ? (
-                results.results.map((result, index) => (
-                  <div key={index} className="p-6 hover:bg-gray-50">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
+              {results.length > 0 ? (
+                results.map((result, index) => (
+                  <div key={`${result.document_id}-${index}`} className="p-6 hover:bg-gray-50">
+                    <div className="flex items-start space-x-4">
+                      <div className="flex-shrink-0 text-2xl">
+                        {getResultIcon(result.document_type)}
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-3 mb-2">
-                          <span className="text-2xl">{getDocumentTypeIcon(result.document_type)}</span>
-                          <Link 
-                            href={`/documents/${result.document_id}/analysis`}
-                            className="text-lg font-medium text-blue-600 hover:text-blue-800"
-                          >
+                          <h3 className="text-lg font-medium text-gray-900 truncate">
                             {result.title}
-                          </Link>
+                          </h3>
                           <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
                             {result.document_type}
                           </span>
-                          <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">
-                            {result.match_type}
+                          <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">
+                            {(result.relevance_score * 100).toFixed(0)}% match
                           </span>
+                          {result.metadata.risk_level && (
+                            <span className={`px-2 py-1 text-xs rounded-full ${getRiskColor(result.metadata.risk_level)}`}>
+                              {result.metadata.risk_level} risk
+                            </span>
+                          )}
                         </div>
                         
-                        <p className="text-gray-700 mb-3 leading-relaxed">
+                        <p className="text-gray-600 mb-3 line-clamp-3">
                           {result.content_snippet}
                         </p>
                         
@@ -362,9 +341,9 @@ export default function AdvancedSearchPage() {
                         {result.highlights.length > 0 && (
                           <div className="mb-3">
                             <div className="flex flex-wrap gap-2">
-                              {result.highlights.map((highlight, idx) => (
-                                <span 
-                                  key={idx}
+                              {result.highlights.map((highlight, i) => (
+                                <span
+                                  key={i}
                                   className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded"
                                 >
                                   {highlight}
@@ -376,28 +355,33 @@ export default function AdvancedSearchPage() {
                         
                         {/* Metadata */}
                         <div className="flex items-center space-x-4 text-sm text-gray-500">
-                          <span>📊 Relevance: {(result.relevance_score * 100).toFixed(0)}%</span>
-                          {result.metadata.risk_level && (
-                            <span className={`px-2 py-1 rounded-full text-xs ${getRiskColor(result.metadata.risk_level)}`}>
-                              Risk: {result.metadata.risk_level}
-                            </span>
+                          {result.metadata.max_amount && (
+                            <span>💰 {formatAmount(result.metadata.max_amount)}</span>
+                          )}
+                          {result.metadata.clause_type && (
+                            <span>📋 {result.metadata.clause_type}</span>
                           )}
                           {result.metadata.created_at && (
                             <span>📅 {new Date(result.metadata.created_at).toLocaleDateString()}</span>
                           )}
-                          {result.metadata.max_amount && (
-                            <span>💰 ${result.metadata.max_amount.toLocaleString()}</span>
-                          )}
+                          <span>🔍 {result.match_type}</span>
                         </div>
-                      </div>
-                      
-                      <div className="ml-4">
-                        <Link
-                          href={`/documents/${result.document_id}/analysis`}
-                          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm"
-                        >
-                          View Details
-                        </Link>
+                        
+                        {/* Actions */}
+                        <div className="mt-3 flex space-x-3">
+                          <Link
+                            href={`/chat?document=${result.document_id}`}
+                            className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                          >
+                            💬 Chat about this document
+                          </Link>
+                          <Link
+                            href={`/documents/${result.document_id}/analysis`}
+                            className="text-green-600 hover:text-green-800 text-sm font-medium"
+                          >
+                            📊 View analysis
+                          </Link>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -405,21 +389,21 @@ export default function AdvancedSearchPage() {
               ) : (
                 <div className="p-12 text-center">
                   <div className="text-6xl mb-4">🔍</div>
-                  <h3 className="text-xl font-medium text-gray-900 mb-2">No results found</h3>
-                  <p className="text-gray-600 mb-4">
-                    Try adjusting your search terms or using different filters
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
+                  <p className="text-gray-500 mb-4">
+                    Try adjusting your search query or using different keywords.
                   </p>
                   
                   {/* Suggestions */}
-                  {results.suggestions.length > 0 && (
-                    <div className="mt-6">
-                      <h4 className="text-sm font-medium text-gray-700 mb-3">💡 Suggestions:</h4>
+                  {searchResponse.suggestions.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-2">💡 Suggestions:</p>
                       <div className="flex flex-wrap justify-center gap-2">
-                        {results.suggestions.map((suggestion, idx) => (
+                        {searchResponse.suggestions.map((suggestion, i) => (
                           <button
-                            key={idx}
-                            onClick={() => handleExampleQuery(suggestion)}
-                            className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors"
+                            key={i}
+                            onClick={() => setQuery(suggestion)}
+                            className="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200"
                           >
                             {suggestion}
                           </button>
@@ -435,23 +419,23 @@ export default function AdvancedSearchPage() {
 
         {/* Help Section */}
         <div className="mt-8 bg-blue-50 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-blue-900 mb-4">🎯 Advanced Search Features</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+          <h3 className="text-lg font-semibold text-blue-900 mb-3">🚀 Advanced Search Tips</h3>
+          <div className="grid md:grid-cols-2 gap-4 text-sm text-blue-800">
             <div>
-              <h4 className="font-medium text-blue-800 mb-2">Natural Language Queries</h4>
-              <ul className="space-y-1 text-blue-700">
-                <li>• "Find contracts with auto-renewal clauses"</li>
-                <li>• "Show invoices above $50k missing PO reference"</li>
-                <li>• "High risk liability agreements"</li>
+              <h4 className="font-medium mb-2">Natural Language Queries:</h4>
+              <ul className="space-y-1 list-disc list-inside">
+                <li>"Find contracts with auto-renewal clauses"</li>
+                <li>"Show high risk liability agreements"</li>
+                <li>"Invoices above $50k missing PO reference"</li>
               </ul>
             </div>
             <div>
-              <h4 className="font-medium text-blue-800 mb-2">Search Types</h4>
-              <ul className="space-y-1 text-blue-700">
-                <li>• <strong>Hybrid:</strong> Combines AI understanding with keyword matching</li>
-                <li>• <strong>Semantic:</strong> AI-powered meaning-based search</li>
-                <li>• <strong>Keyword:</strong> Traditional text matching</li>
-                <li>• <strong>Structured:</strong> Pattern and rule-based search</li>
+              <h4 className="font-medium mb-2">Search Types:</h4>
+              <ul className="space-y-1 list-disc list-inside">
+                <li><strong>Hybrid:</strong> Combines semantic understanding with keywords</li>
+                <li><strong>Semantic:</strong> Understands meaning and context</li>
+                <li><strong>Keyword:</strong> Traditional text matching</li>
+                <li><strong>Structured:</strong> Filters by document properties</li>
               </ul>
             </div>
           </div>

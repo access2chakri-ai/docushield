@@ -88,6 +88,27 @@ export default function DocumentAnalysisPage() {
       }
 
       const data: ContractAnalysis = await response.json();
+      
+      // Defensive check to ensure we have the expected structure
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid analysis data received from server');
+      }
+      
+      // Ensure contract object exists, create fallback if missing
+      if (!data.contract) {
+        data.contract = {
+          contract_id: contractId,
+          filename: 'Unknown Document',
+          status: 'unknown',
+          created_at: new Date().toISOString()
+        };
+      }
+      
+      // Ensure arrays exist, create empty arrays if missing
+      if (!Array.isArray(data.findings)) data.findings = [];
+      if (!Array.isArray(data.suggestions)) data.suggestions = [];
+      if (!Array.isArray(data.alerts)) data.alerts = [];
+      
       setAnalysis(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load analysis');
@@ -209,14 +230,24 @@ export default function DocumentAnalysisPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-documents-pattern relative overflow-hidden">
+      {/* Floating analysis elements */}
+      <div className="floating-document top-20 left-10 text-6xl">📊</div>
+      <div className="floating-document top-36 right-8 text-5xl">🔍</div>
+      <div className="floating-document bottom-32 left-1/4 text-4xl">⚠️</div>
+      <div className="floating-document bottom-16 right-1/3 text-5xl">📋</div>
+      
+      {/* Analysis flow lines */}
+      <div className="data-flow top-0 left-1/5" style={{animationDelay: '1s'}}></div>
+      <div className="data-flow top-0 right-1/4" style={{animationDelay: '2s'}}></div>
+      
+      <div className="container mx-auto px-4 py-8 relative z-10">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Document Analysis</h1>
             <p className="text-gray-600 mt-1">
-              {analysis.contract.filename}
+              {analysis.contract?.filename || 'Unknown Document'}
             </p>
           </div>
           <div className="flex items-center space-x-4">
@@ -244,21 +275,21 @@ export default function DocumentAnalysisPage() {
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Filename</label>
-                  <p className="text-sm text-gray-900">{analysis.contract.filename}</p>
+                  <p className="text-sm text-gray-900">{analysis.contract?.filename || 'Unknown'}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Status</label>
-                  <p className="text-sm text-gray-900 capitalize">{analysis.contract.status}</p>
+                  <p className="text-sm text-gray-900 capitalize">{analysis.contract?.status || 'Unknown'}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Created</label>
                   <p className="text-sm text-gray-900">
-                    {new Date(analysis.contract.created_at).toLocaleDateString()}
+                    {analysis.contract?.created_at ? new Date(analysis.contract.created_at).toLocaleDateString() : 'Unknown'}
                   </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Contract ID</label>
-                  <p className="text-sm text-gray-900 font-mono">{analysis.contract.contract_id}</p>
+                  <p className="text-sm text-gray-900 font-mono">{analysis.contract?.contract_id || 'Unknown'}</p>
                 </div>
               </div>
             </div>

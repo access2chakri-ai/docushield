@@ -1,0 +1,88 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="searchGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8faff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e0e7ff;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Search pattern -->
+    <pattern id="searchPattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
+      <rect width="200" height="200" fill="transparent"/>
+      <g opacity="0.04">
+        <!-- Search magnifying glass -->
+        <circle cx="70" cy="70" r="15" fill="none" stroke="#6366f1" stroke-width="3"/>
+        <line x1="82" y1="82" x2="95" y2="95" stroke="#6366f1" stroke-width="3"/>
+        
+        <!-- Search results list -->
+        <rect x="110" y="50" width="60" height="4" rx="2" fill="#8b5cf6"/>
+        <rect x="110" y="60" width="45" height="4" rx="2" fill="#a855f7"/>
+        <rect x="110" y="70" width="55" height="4" rx="2" fill="#8b5cf6"/>
+        <rect x="110" y="80" width="40" height="4" rx="2" fill="#a855f7"/>
+        
+        <!-- Index/database representation -->
+        <rect x="40" y="120" width="8" height="40" fill="#6366f1" opacity="0.6"/>
+        <rect x="52" y="125" width="8" height="35" fill="#6366f1" opacity="0.7"/>
+        <rect x="64" y="115" width="8" height="45" fill="#6366f1" opacity="0.8"/>
+        <rect x="76" y="130" width="8" height="30" fill="#6366f1" opacity="0.6"/>
+        
+        <!-- Vector similarity visualization -->
+        <g opacity="0.5">
+          <line x1="130" y1="120" x2="150" y2="110" stroke="#8b5cf6" stroke-width="1"/>
+          <line x1="130" y1="120" x2="160" y2="130" stroke="#8b5cf6" stroke-width="1"/>
+          <line x1="130" y1="120" x2="145" y2="140" stroke="#8b5cf6" stroke-width="1"/>
+          <circle cx="150" cy="110" r="2" fill="#8b5cf6"/>
+          <circle cx="160" cy="130" r="2" fill="#8b5cf6"/>
+          <circle cx="145" cy="140" r="2" fill="#8b5cf6"/>
+        </g>
+      </g>
+    </pattern>
+    
+    <!-- Search beam effect -->
+    <radialGradient id="searchBeam" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#6366f1;stop-opacity:0.1" />
+      <stop offset="100%" style="stop-color:#6366f1;stop-opacity:0" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Base gradient -->
+  <rect width="1920" height="1080" fill="url(#searchGradient)"/>
+  
+  <!-- Search pattern overlay -->
+  <rect width="1920" height="1080" fill="url(#searchPattern)"/>
+  
+  <!-- Search beam animations -->
+  <g opacity="0.3">
+    <circle cx="400" cy="300" r="50" fill="url(#searchBeam)">
+      <animate attributeName="r" values="30;100;30" dur="4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.3;0.1;0.3" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="1200" cy="600" r="40" fill="url(#searchBeam)">
+      <animate attributeName="r" values="20;80;20" dur="5s" begin="1s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.3;0.1;0.3" dur="5s" begin="1s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="700" cy="800" r="60" fill="url(#searchBeam)">
+      <animate attributeName="r" values="40;120;40" dur="6s" begin="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.3;0.1;0.3" dur="6s" begin="2s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  
+  <!-- Search query visualization -->
+  <g opacity="0.05">
+    <rect x="200" y="100" width="300" height="20" rx="10" fill="#6366f1">
+      <animate attributeName="width" values="100;400;100" dur="3s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="1000" y="400" width="250" height="20" rx="10" fill="#8b5cf6">
+      <animate attributeName="width" values="150;350;150" dur="4s" begin="1s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+  
+  <!-- Data connection lines -->
+  <g opacity="0.08" stroke="#6366f1" stroke-width="2" fill="none">
+    <path d="M100 200 Q400 300 800 250 T1500 300">
+      <animate attributeName="stroke-dasharray" values="0 1000;50 950;0 1000" dur="8s" repeatCount="indefinite"/>
+    </path>
+    <path d="M200 600 Q600 500 1000 650 T1600 600">
+      <animate attributeName="stroke-dasharray" values="0 1000;50 950;0 1000" dur="10s" begin="2s" repeatCount="indefinite"/>
+    </path>
+  </g>
+</svg>

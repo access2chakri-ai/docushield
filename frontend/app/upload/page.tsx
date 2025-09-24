@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
+import { config } from '@/utils/config';
 
 interface UploadedDocument {
   contract_id: string;
@@ -42,7 +43,8 @@ export default function UploadPage() {
   // Load recent uploads on page load
   const loadRecentUploads = async () => {
     try {
-      const response = await authenticatedFetch('/api/documents?limit=5');
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents?limit=5`);
+      
       if (response.ok) {
         const data = await response.json();
         const recentDocs: UploadedDocument[] = data.documents.map((doc: any) => ({
@@ -63,9 +65,18 @@ export default function UploadPage() {
         if (processingDocs.length > 0) {
           setStatusPolling(processingDocs);
         }
+      } else {
+        console.warn('Failed to load recent uploads:', response.status);
+        setUploadedDocuments([]);
       }
     } catch (error) {
-      console.error('Failed to load recent uploads:', error);
+      if (error instanceof Error && error.message.includes('timed out')) {
+        console.warn('Recent uploads request timed out - backend may not be running');
+        setError(`Cannot connect to backend server. Please ensure it is running on ${config.apiBaseUrl}`);
+      } else {
+        console.error('Failed to load recent uploads:', error);
+      }
+      setUploadedDocuments([]);
     }
   };
 
@@ -105,7 +116,7 @@ export default function UploadPage() {
   // Poll document status
   const pollDocumentStatus = async (contractId: string) => {
     try {
-      const response = await authenticatedFetch(`/api/documents/${contractId}/status`);
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/${contractId}/status`);
       if (response.ok) {
         const statusData = await response.json();
         
@@ -149,7 +160,7 @@ export default function UploadPage() {
     setRetryingDocuments(prev => [...prev, contractId]);
     
     try {
-      const response = await authenticatedFetch('/api/documents/retry-processing', {
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/retry-processing`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -203,7 +214,7 @@ export default function UploadPage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await authenticatedFetch('/api/documents/upload', {
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -253,8 +264,18 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8 max-w-2xl">
+    <div className="min-h-screen bg-upload-pattern relative overflow-hidden">
+      {/* Floating upload elements */}
+      <div className="floating-document top-24 left-8 text-6xl">📤</div>
+      <div className="floating-document top-40 right-12 text-5xl">☁️</div>
+      <div className="floating-document bottom-36 left-1/4 text-4xl">⚡</div>
+      <div className="floating-document bottom-20 right-1/3 text-5xl">✅</div>
+      
+      {/* Upload processing flow */}
+      <div className="data-flow top-0 left-1/3" style={{animationDelay: '0.5s'}}></div>
+      <div className="data-flow top-0 right-1/4" style={{animationDelay: '2.5s'}}></div>
+      
+      <div className="container mx-auto px-4 py-8 max-w-2xl relative z-10">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Upload Documents</h1>
@@ -390,7 +411,7 @@ export default function UploadPage() {
                           <>
                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                             <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
-                              Processing...
+                              Processing<span className="processing-dots"></span>
                             </span>
                           </>
                         )}

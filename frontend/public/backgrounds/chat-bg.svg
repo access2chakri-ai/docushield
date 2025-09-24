@@ -1,0 +1,83 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="chatGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#faf5ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e9d5ff;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Chat bubble pattern -->
+    <pattern id="chatPattern" x="0" y="0" width="160" height="160" patternUnits="userSpaceOnUse">
+      <rect width="160" height="160" fill="transparent"/>
+      <g opacity="0.04">
+        <!-- User chat bubble -->
+        <path d="M20 40 L80 40 Q85 40 85 45 L85 65 Q85 70 80 70 L30 70 L20 80 L20 45 Q20 40 25 40 Z" fill="#8b5cf6"/>
+        
+        <!-- AI chat bubble -->
+        <path d="M100 90 L140 90 Q145 90 145 95 L145 115 Q145 120 140 120 L130 120 L140 130 L140 95 Q140 90 135 90 Z" fill="#a855f7"/>
+        
+        <!-- Thinking dots -->
+        <circle cx="110" cy="105" r="2" fill="#ffffff">
+          <animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="120" cy="105" r="2" fill="#ffffff">
+          <animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" begin="0.3s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="130" cy="105" r="2" fill="#ffffff">
+          <animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" begin="0.6s" repeatCount="indefinite"/>
+        </circle>
+      </g>
+    </pattern>
+    
+    <!-- Neural network connections -->
+    <pattern id="neuralPattern" x="0" y="0" width="300" height="300" patternUnits="userSpaceOnUse">
+      <g opacity="0.02">
+        <!-- Nodes -->
+        <circle cx="50" cy="50" r="3" fill="#7c3aed"/>
+        <circle cx="150" cy="80" r="3" fill="#7c3aed"/>
+        <circle cx="250" cy="60" r="3" fill="#7c3aed"/>
+        <circle cx="100" cy="150" r="3" fill="#7c3aed"/>
+        <circle cx="200" cy="180" r="3" fill="#7c3aed"/>
+        
+        <!-- Connections -->
+        <line x1="50" y1="50" x2="150" y2="80" stroke="#8b5cf6" stroke-width="1"/>
+        <line x1="150" y1="80" x2="250" y2="60" stroke="#8b5cf6" stroke-width="1"/>
+        <line x1="50" y1="50" x2="100" y2="150" stroke="#8b5cf6" stroke-width="1"/>
+        <line x1="150" y1="80" x2="200" y2="180" stroke="#8b5cf6" stroke-width="1"/>
+        <line x1="100" y1="150" x2="200" y2="180" stroke="#8b5cf6" stroke-width="1"/>
+      </g>
+    </pattern>
+  </defs>
+  
+  <!-- Base gradient -->
+  <rect width="1920" height="1080" fill="url(#chatGradient)"/>
+  
+  <!-- Chat pattern overlay -->
+  <rect width="1920" height="1080" fill="url(#chatPattern)"/>
+  
+  <!-- Neural network overlay -->
+  <rect width="1920" height="1080" fill="url(#neuralPattern)"/>
+  
+  <!-- AI processing waves -->
+  <g opacity="0.1">
+    <ellipse cx="960" cy="540" rx="200" ry="50" fill="none" stroke="#8b5cf6" stroke-width="2">
+      <animate attributeName="rx" values="200;400;200" dur="6s" repeatCount="indefinite"/>
+      <animate attributeName="ry" values="50;100;50" dur="6s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.1;0.3;0.1" dur="6s" repeatCount="indefinite"/>
+    </ellipse>
+    <ellipse cx="960" cy="540" rx="300" ry="75" fill="none" stroke="#a855f7" stroke-width="2">
+      <animate attributeName="rx" values="300;500;300" dur="8s" begin="2s" repeatCount="indefinite"/>
+      <animate attributeName="ry" values="75;125;75" dur="8s" begin="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.1;0.2;0.1" dur="8s" begin="2s" repeatCount="indefinite"/>
+    </ellipse>
+  </g>
+  
+  <!-- Message flow indicators -->
+  <g opacity="0.06">
+    <rect x="100" y="300" width="40" height="8" rx="4" fill="#8b5cf6">
+      <animateTransform attributeName="transform" type="translate" values="0 0;1600 0;0 0" dur="5s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="100" y="600" width="60" height="8" rx="4" fill="#a855f7">
+      <animateTransform attributeName="transform" type="translate" values="0 0;1600 0;0 0" dur="7s" begin="1s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+</svg>

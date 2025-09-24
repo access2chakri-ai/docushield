@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getUserData, isAuthenticated, logout, authenticatedFetch, type User } from '@/utils/auth';
+import LoadingSpinner from '@/app/components/LoadingSpinner';
 
 // User interface is now imported from @/utils/auth
 
@@ -43,23 +44,48 @@ export default function DocumentsPage() {
     if (currentUser) {
       setUser(currentUser);
       fetchDocuments();
+    } else {
+      // If no user data but authenticated, there might be an issue
+      setError('User data not found. Please try logging in again.');
+      setLoading(false);
     }
   }, [router]);
 
   const fetchDocuments = async () => {
     try {
       setLoading(true);
+      setError(null);
+      
       const response = await authenticatedFetch(`http://localhost:8000/api/documents?limit=50`);
       
       if (!response.ok) {
+        if (response.status === 401) {
+          // Token expired or invalid, redirect to login
+          router.push('/auth');
+          return;
+        }
         throw new Error(`Failed to fetch documents: ${response.statusText}`);
       }
 
       const data: DocumentsResponse = await response.json();
-      setDocuments(data.documents);
+      setDocuments(data.documents || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load documents');
+      console.error('Error fetching documents:', err);
+      if (err instanceof Error) {
+        if (err.name === 'AbortError') {
+          setError('Request timed out. Please check if the backend is running on http://localhost:8000');
+        } else if (err.message.includes('fetch') || err.message.includes('NetworkError')) {
+          setError('Cannot connect to server. Please ensure the backend is running on http://localhost:8000');
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError('Failed to load documents');
+      }
+      // Set empty documents array to show the page
+      setDocuments([]);
     } finally {
+      // Ensure loading is always set to false
       setLoading(false);
     }
   };
@@ -143,15 +169,52 @@ export default function DocumentsPage() {
     }
   };
 
-  const deleteDocument = async (document: Document) => {
+  const forceStopProcessing = async (document: Document) => {
     if (!user) return;
 
-    if (!confirm(`Are you sure you want to delete "${document.filename}"? This action cannot be undone and will remove all associated analysis data.`)) {
+    if (!confirm(`Force stop processing for "${document.filename}"? This will cancel the current processing and allow you to delete or reprocess the document.`)) {
       return;
     }
 
     try {
-      const response = await authenticatedFetch(`http://localhost:8000/api/documents/${document.contract_id}`, {
+      const response = await authenticatedFetch(`http://localhost:8000/api/documents/${document.contract_id}/force-stop`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || 'Failed to force stop processing');
+      }
+
+      alert(`Processing stopped for "${document.filename}". You can now delete or reprocess the document.`);
+      
+      // Refresh documents list
+      fetchDocuments();
+    } catch (err) {
+      alert(`Force stop failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const deleteDocument = async (document: Document, force: boolean = false) => {
+    if (!user) return;
+
+    const isProcessing = document.status === 'processing';
+    let confirmMessage = `Are you sure you want to delete "${document.filename}"? This action cannot be undone and will remove all associated analysis data.`;
+    
+    if (isProcessing && !force) {
+      confirmMessage = `"${document.filename}" is currently processing. This will force stop processing and delete the document. Continue?`;
+    }
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      const url = isProcessing && !force 
+        ? `http://localhost:8000/api/documents/${document.contract_id}?force=true`
+        : `http://localhost:8000/api/documents/${document.contract_id}`;
+        
+      const response = await authenticatedFetch(url, {
         method: 'DELETE'
       });
 
@@ -171,15 +234,30 @@ export default function DocumentsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
+      <LoadingSpinner 
+        message="Loading your documents..." 
+        timeout={8000}
+        onTimeout={() => {
+          setError('Loading timed out. Please check if the backend server is running on http://localhost:8000');
+          setLoading(false);
+        }}
+      />
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-documents-pattern relative overflow-hidden">
+      {/* Floating document elements */}
+      <div className="floating-document top-20 left-12 text-6xl">📄</div>
+      <div className="floating-document top-48 right-8 text-5xl">📝</div>
+      <div className="floating-document bottom-32 left-1/3 text-4xl">📋</div>
+      <div className="floating-document bottom-16 right-1/5 text-5xl">🗂️</div>
+      
+      {/* Document processing flow */}
+      <div className="data-flow top-0 left-1/6" style={{animationDelay: '0s'}}></div>
+      <div className="data-flow top-0 right-1/5" style={{animationDelay: '2s'}}></div>
+      
+      <div className="container mx-auto px-4 py-8 relative z-10">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -351,12 +429,12 @@ export default function DocumentsPage() {
                         {new Date(document.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                        <button
-                          onClick={() => viewDocument(document)}
+                        <Link
+                          href={`/documents/${document.contract_id}/viewer`}
                           className="text-blue-600 hover:text-blue-900"
                         >
                           👁️ View
-                        </button>
+                        </Link>
                         <button
                           onClick={() => processDocument(document)}
                           className="text-green-600 hover:text-green-900"
@@ -364,6 +442,15 @@ export default function DocumentsPage() {
                         >
                           ⚡ Process
                         </button>
+                        {document.status === 'processing' && (
+                          <button
+                            onClick={() => forceStopProcessing(document)}
+                            className="text-orange-600 hover:text-orange-900"
+                            title="Force stop stuck processing"
+                          >
+                            🛑 Stop
+                          </button>
+                        )}
                         <Link
                           href={`/chat?document=${document.contract_id}`}
                           className="text-purple-600 hover:text-purple-900"
@@ -373,7 +460,6 @@ export default function DocumentsPage() {
                         <button
                           onClick={() => deleteDocument(document)}
                           className="text-red-600 hover:text-red-900"
-                          disabled={document.status === 'processing'}
                         >
                           🗑️ Delete
                         </button>

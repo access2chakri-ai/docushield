@@ -3,12 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
 
-interface User {
-  user_id: string;
-  email: string;
-  name: string;
-}
 
 interface Message {
   id: string;
@@ -20,15 +16,29 @@ interface Message {
 }
 
 interface RunResult {
-  id: string;
+  run_id: string;
   query: string;
   status: string;
   final_answer: string;
+  current_step: number;
   total_steps: number;
   execution_time: number;
   retrieval_results: any[];
   llm_analysis: any;
   external_actions: any;
+  steps: Array<{
+    name: string;
+    description: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    completed_at?: string;
+  }>;
+}
+
+interface Document {
+  contract_id: string;
+  filename: string;
+  status: string;
+  created_at: string;
 }
 
 export default function ChatPage() {
@@ -38,19 +48,23 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedDataset] = useState('default');
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null);
+  const [availableDocuments, setAvailableDocuments] = useState<Document[]>([]);
+  const [selectedDocumentName, setSelectedDocumentName] = useState<string>('');
   const router = useRouter();
   const searchParams = useSearchParams();
 
   useEffect(() => {
     // Check authentication
-    const userData = localStorage.getItem('docushield_user');
-    if (!userData) {
+    if (!isAuthenticated()) {
       router.push('/auth');
       return;
     }
 
-    const currentUser: User = JSON.parse(userData);
-    setUser(currentUser);
+    const currentUser = getUserData();
+    if (currentUser) {
+      setUser(currentUser);
+      loadUserDocuments(currentUser.user_id);
+    }
 
     // Check if a specific document was selected
     const documentId = searchParams.get('document');
@@ -61,7 +75,7 @@ export default function ChatPage() {
     // Set initial welcome message
     const welcomeMessage = documentId 
       ? `Welcome! I'm ready to answer questions about your selected document. What would you like to know?`
-      : `Welcome ${currentUser.name}! I'm your document analysis agent. Upload some documents first, then ask me questions about them. I'll use TiDB vector search, LLM analysis chains, and external APIs to provide comprehensive answers.`;
+      : `Welcome ${currentUser?.name || 'User'}! I'm your document analysis agent. Upload some documents first, then ask me questions about them. I'll use TiDB vector search, LLM analysis chains, and external APIs to provide comprehensive answers.`;
 
     setMessages([{
       id: '1',
@@ -70,6 +84,65 @@ export default function ChatPage() {
       timestamp: new Date()
     }]);
   }, [router, searchParams]);
+
+  const loadUserDocuments = async (userId: string) => {
+    try {
+      const response = await authenticatedFetch('http://localhost:8000/api/documents');
+      
+      if (response.ok) {
+        const data = await response.json();
+        const completedDocs = data.documents.filter((doc: Document) => doc.status === 'completed');
+        setAvailableDocuments(completedDocs);
+        
+        // Set selected document name if we have one selected
+        if (selectedDocument) {
+          const selectedDoc = completedDocs.find((doc: Document) => doc.contract_id === selectedDocument);
+          if (selectedDoc) {
+            setSelectedDocumentName(selectedDoc.filename);
+          }
+        }
+      } else {
+        console.warn('Failed to load documents:', response.status);
+        setAvailableDocuments([]);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('timed out')) {
+        console.warn('Load documents request timed out - backend may not be running');
+      } else {
+        console.error('Failed to load documents:', error);
+      }
+      setAvailableDocuments([]);
+      
+      // Show error message in chat if no documents could be loaded
+      setMessages(prev => [...prev, {
+        id: Date.now().toString() + '_doc_error',
+        type: 'system',
+        content: '⚠️ Could not load your documents. Please check if the backend is running.',
+        timestamp: new Date()
+      }]);
+    }
+  };
+
+  const handleDocumentChange = (documentId: string) => {
+    setSelectedDocument(documentId);
+    const selectedDoc = availableDocuments.find(doc => doc.contract_id === documentId);
+    if (selectedDoc) {
+      setSelectedDocumentName(selectedDoc.filename);
+      
+      // Update URL
+      const newUrl = documentId ? `/chat?document=${documentId}` : '/chat';
+      window.history.pushState({}, '', newUrl);
+      
+      // Clear messages and show new welcome message
+      const welcomeMessage = `Welcome! I'm ready to answer questions about "${selectedDoc.filename}". What would you like to know?`;
+      setMessages([{
+        id: '1',
+        type: 'system',
+        content: welcomeMessage,
+        timestamp: new Date()
+      }]);
+    }
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
@@ -82,104 +155,68 @@ export default function ChatPage() {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
     setIsLoading(true);
 
     try {
-      // Step 1: Start the analysis
-      const response = await fetch('http://localhost:8000/api/ask', {
+      // Use extended timeout for AI chat operations
+      const response = await authenticatedFetch('http://localhost:8000/api/ask', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          question: input,
-          dataset_id: selectedDataset,
-          user_id: user?.user_id
+          question: currentInput,
+          document_id: selectedDocument,
+          conversation_history: messages.slice(-5).map(msg => ({
+            role: msg.type === 'user' ? 'user' : 'assistant',
+            content: msg.content
+          }))
         })
-      });
+      }, 120000); // 2 minutes timeout for AI operations
 
       if (!response.ok) {
-        throw new Error('Failed to start analysis');
+        throw new Error(`Chat failed: ${response.statusText}`);
       }
 
-      const { run_id } = await response.json();
+      const chatResult = await response.json();
 
-      // Add processing message
-      const processingMessage: Message = {
-        id: Date.now().toString() + '_processing',
-        type: 'system',
-        content: '🤖 Running multi-step analysis...\n\n⏳ Step 1: Searching documents with TiDB vector search\n⏳ Step 2: Analyzing with LLM chain\n⏳ Step 3: Enriching with external APIs\n⏳ Step 4: Synthesizing final answer',
+      // Create assistant response message
+      const assistantMessage: Message = {
+        id: Date.now().toString() + '_result',
+        type: 'assistant',
+        content: chatResult.response || 'I apologize, but I couldn\'t generate a response. Please try rephrasing your question.',
         timestamp: new Date(),
-        runId: run_id
+        steps: {
+          total_steps: 1,
+          execution_time: chatResult.processing_time || 0,
+          retrieval_results: chatResult.sources || [],
+          llm_analysis: chatResult.agent_results || [],
+          external_actions: {}
+        }
       };
 
-      setMessages(prev => [...prev, processingMessage]);
-
-      // Step 2: Poll for results
-      let attempts = 0;
-      const maxAttempts = 30;
-      
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        const resultResponse = await fetch(`http://localhost:8000/api/runs/${run_id}`);
-        
-        if (resultResponse.ok) {
-          const result: RunResult = await resultResponse.json();
-          
-          if (result.status === 'completed') {
-            // Remove processing message
-            setMessages(prev => prev.filter(msg => msg.runId !== run_id));
-            
-            // Add detailed result
-            const resultMessage: Message = {
-              id: Date.now().toString() + '_result',
-              type: 'assistant',
-              content: result.final_answer || 'Analysis completed but no answer generated.',
-              timestamp: new Date(),
-              steps: {
-                total_steps: result.total_steps,
-                execution_time: result.execution_time,
-                retrieval_results: result.retrieval_results,
-                llm_analysis: result.llm_analysis,
-                external_actions: result.external_actions
-              }
-            };
-            
-            setMessages(prev => [...prev, resultMessage]);
-            break;
-          } else if (result.status === 'failed') {
-            setMessages(prev => prev.filter(msg => msg.runId !== run_id));
-            setMessages(prev => [...prev, {
-              id: Date.now().toString() + '_error',
-              type: 'system',
-              content: '❌ Analysis failed. Please try again or check if you have documents uploaded.',
-              timestamp: new Date()
-            }]);
-            break;
-          }
-        }
-        
-        attempts++;
-      }
-      
-      if (attempts >= maxAttempts) {
-        setMessages(prev => prev.filter(msg => msg.runId !== run_id));
-        setMessages(prev => [...prev, {
-          id: Date.now().toString() + '_timeout',
-          type: 'system',
-          content: '⏰ Analysis is taking longer than expected. Please try again.',
-          timestamp: new Date()
-        }]);
-      }
+      setMessages(prev => [...prev, assistantMessage]);
 
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Chat error:', error);
+      let errorMessage = '❌ Failed to process your question.';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('fetch') || error.message.includes('NetworkError')) {
+          errorMessage = '❌ Cannot connect to backend server. Please ensure it is running on http://localhost:8000';
+        } else if (error.message.includes('timeout') || error.message.includes('AbortError')) {
+          errorMessage = '❌ Request timed out. The backend may be overloaded or not responding.';
+        } else {
+          errorMessage = `❌ Error: ${error.message}`;
+        }
+      }
+      
       setMessages(prev => [...prev, {
         id: Date.now().toString() + '_error',
         type: 'system',
-        content: '❌ Failed to process your question. Please make sure the backend is running and try again.',
+        content: errorMessage,
         timestamp: new Date()
       }]);
     } finally {
@@ -195,14 +232,24 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
+    <div className="min-h-screen bg-chat-pattern relative overflow-hidden">
+      {/* Floating chat elements */}
+      <div className="floating-document top-20 left-10 text-6xl">💬</div>
+      <div className="floating-document top-36 right-8 text-5xl">🤖</div>
+      <div className="floating-document bottom-32 left-1/5 text-4xl">💡</div>
+      <div className="floating-document bottom-20 right-1/4 text-5xl">🔍</div>
+      
+      {/* AI processing flow */}
+      <div className="data-flow top-0 left-1/5" style={{animationDelay: '1s'}}></div>
+      <div className="data-flow top-0 right-1/5" style={{animationDelay: '3s'}}></div>
+      
+      <div className="container mx-auto px-4 py-8 max-w-4xl relative z-10">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">AI Document Chat</h1>
             <p className="text-gray-600">
-              {selectedDocument 
-                ? `Chatting about document: ${selectedDocument}` 
+              {selectedDocument && selectedDocumentName
+                ? `Chatting about: ${selectedDocumentName}` 
                 : `Ask questions about your uploaded documents`}
             </p>
             {user && (
@@ -230,6 +277,38 @@ export default function ChatPage() {
             </Link>
           </div>
         </div>
+
+        {/* Document Selector */}
+        {availableDocuments.length > 0 && (
+          <div className="bg-white rounded-lg shadow-lg p-4 mb-6">
+            <div className="flex items-center space-x-4">
+              <label className="text-sm font-medium text-gray-700">
+                📄 Select Document:
+              </label>
+              <select
+                value={selectedDocument || ''}
+                onChange={(e) => handleDocumentChange(e.target.value)}
+                className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={isLoading}
+              >
+                <option value="">All Documents (General Chat)</option>
+                {availableDocuments.map((doc) => (
+                  <option key={doc.contract_id} value={doc.contract_id}>
+                    {doc.filename} ({new Date(doc.created_at).toLocaleDateString()})
+                  </option>
+                ))}
+              </select>
+              {selectedDocument && (
+                <Link
+                  href={`/search`}
+                  className="px-3 py-2 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200"
+                >
+                  🔍 Advanced Search
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className="bg-white rounded-lg shadow-lg">
           {/* Chat Messages */}
@@ -306,7 +385,10 @@ export default function ChatPage() {
             </div>
             
             <div className="mt-2 text-sm text-gray-500">
-              💡 Try: "What are the main topics?", "Summarize the key findings", "What recommendations are made?"
+              💡 Try: {selectedDocument 
+                ? `"Summarize this document", "What are the high-risk clauses?", "What recommendations are made?"`
+                : `"What documents do I have?", "Show me high-risk contracts", "Find liability clauses"`
+              }
             </div>
           </div>
         </div>

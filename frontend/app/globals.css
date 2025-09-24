@@ -2,6 +2,179 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom Animations for Digital Twin */
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.8);
+  }
+}
+
+.animate-blob {
+  animation: blob 7s infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.6s ease-out forwards;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.8s ease-out forwards;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Hover effects */
+.hover-lift {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+/* Custom scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+}
+
+/* Loading spinner */
+@keyframes spinner {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spinner {
+  animation: spinner 1s linear infinite;
+}
+
+/* Document icons animation */
+@keyframes document-float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-5px) rotate(1deg);
+  }
+  75% {
+    transform: translateY(5px) rotate(-1deg);
+  }
+}
+
+.animate-document-float {
+  animation: document-float 4s ease-in-out infinite;
+}
+
+/* Progress bar animation */
+@keyframes progress-fill {
+  from {
+    width: 0%;
+  }
+  to {
+    width: var(--progress-width);
+  }
+}
+
+.animate-progress {
+  animation: progress-fill 1.5s ease-out forwards;
+}
+
 @layer base {
   html {
     font-family: system-ui, sans-serif;
@@ -37,5 +210,281 @@
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+}
+
+/* Performance-optimized background system for DocuShield */
+.bg-documents-pattern {
+  background-image: 
+    url('/backgrounds/documents-bg.svg'),
+    linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 197, 253, 0.05) 100%),
+    radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(34, 197, 94, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+  background-attachment: fixed, fixed, fixed, fixed, fixed;
+  background-size: cover, 100% 100%, 800px 800px, 600px 600px, 400px 400px;
+  background-repeat: no-repeat;
+  background-position: center, center, 20% 80%, 80% 20%, 40% 40%;
+}
+
+.bg-upload-pattern {
+  background-image: 
+    url('/backgrounds/upload-bg.svg'),
+    linear-gradient(135deg, rgba(34, 197, 94, 0.05) 0%, rgba(134, 239, 172, 0.05) 100%),
+    radial-gradient(circle at 25% 25%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(168, 85, 247, 0.08) 0%, transparent 50%);
+  background-attachment: fixed, fixed, fixed, fixed;
+  background-size: cover, 100% 100%, 700px 700px, 500px 500px;
+  background-repeat: no-repeat;
+  background-position: center, center, 25% 25%, 75% 75%;
+}
+
+.bg-chat-pattern {
+  background-image: 
+    url('/backgrounds/chat-bg.svg'),
+    linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(196, 181, 253, 0.05) 100%),
+    radial-gradient(circle at 30% 70%, rgba(34, 197, 94, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 70% 30%, rgba(59, 130, 246, 0.08) 0%, transparent 50%);
+  background-attachment: fixed, fixed, fixed, fixed;
+  background-size: cover, 100% 100%, 600px 600px, 800px 800px;
+  background-repeat: no-repeat;
+  background-position: center, center, 30% 70%, 70% 30%;
+}
+
+.bg-search-pattern {
+  background-image: 
+    url('/backgrounds/search-bg.svg'),
+    linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(165, 180, 252, 0.05) 100%),
+    radial-gradient(circle at 60% 40%, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 20% 60%, rgba(34, 197, 94, 0.08) 0%, transparent 50%);
+  background-attachment: fixed, fixed, fixed, fixed;
+  background-size: cover, 100% 100%, 750px 750px, 450px 450px;
+  background-repeat: no-repeat;
+  background-position: center, center, 60% 40%, 20% 60%;
+}
+
+.bg-dashboard-pattern {
+  background-image: 
+    url('/backgrounds/dashboard-bg.svg'),
+    linear-gradient(135deg, rgba(239, 68, 68, 0.03) 0%, rgba(252, 165, 165, 0.03) 100%),
+    radial-gradient(circle at 50% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(34, 197, 94, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 20% 50%, rgba(168, 85, 247, 0.06) 0%, transparent 50%);
+  background-attachment: fixed, fixed, fixed, fixed, fixed;
+  background-size: cover, 100% 100%, 900px 900px, 600px 600px, 400px 400px;
+  background-repeat: no-repeat;
+  background-position: center, center, 50% 20%, 80% 80%, 20% 50%;
+}
+
+.bg-auth-pattern {
+  background-image: 
+    url('/backgrounds/auth-bg.svg'),
+    linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(147, 197, 253, 0.08) 100%),
+    radial-gradient(circle at 40% 60%, rgba(168, 85, 247, 0.12) 0%, transparent 60%),
+    radial-gradient(circle at 80% 40%, rgba(34, 197, 94, 0.1) 0%, transparent 60%);
+  background-attachment: fixed, fixed, fixed, fixed;
+  background-size: cover, 100% 100%, 800px 800px, 600px 600px;
+  background-repeat: no-repeat;
+  background-position: center, center, 40% 60%, 80% 40%;
+}
+
+.bg-digital-twin-pattern {
+  background-image: 
+    url('/backgrounds/digital-twin-bg.svg'),
+    linear-gradient(135deg, rgba(249, 115, 22, 0.05) 0%, rgba(254, 215, 170, 0.05) 100%),
+    radial-gradient(circle at 30% 30%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+    radial-gradient(circle at 70% 70%, rgba(168, 85, 247, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 50% 80%, rgba(34, 197, 94, 0.06) 0%, transparent 50%);
+  background-attachment: fixed, fixed, fixed, fixed, fixed;
+  background-size: cover, 100% 100%, 700px 700px, 500px 500px, 300px 300px;
+  background-repeat: no-repeat;
+  background-position: center, center, 30% 30%, 70% 70%, 50% 80%;
+}
+
+/* Animated document processing elements */
+.floating-document {
+  position: absolute;
+  opacity: 0.1;
+  animation: documentFloat 8s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.floating-document:nth-child(1) { animation-delay: 0s; }
+.floating-document:nth-child(2) { animation-delay: 2s; }
+.floating-document:nth-child(3) { animation-delay: 4s; }
+.floating-document:nth-child(4) { animation-delay: 6s; }
+
+@keyframes documentFloat {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg) scale(1);
+    opacity: 0.05;
+  }
+  25% {
+    transform: translateY(-20px) rotate(2deg) scale(1.05);
+    opacity: 0.1;
+  }
+  50% {
+    transform: translateY(-10px) rotate(-1deg) scale(0.95);
+    opacity: 0.15;
+  }
+  75% {
+    transform: translateY(-30px) rotate(1deg) scale(1.02);
+    opacity: 0.08;
+  }
+}
+
+/* Processing animation for upload and processing pages */
+.processing-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.processing-dots::after {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: processingPulse 1.5s ease-in-out infinite;
+}
+
+.processing-dots::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: processingPulse 1.5s ease-in-out infinite 0.3s;
+}
+
+@keyframes processingPulse {
+  0%, 80%, 100% {
+    transform: scale(0);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Subtle data flow animation */
+.data-flow {
+  position: absolute;
+  width: 2px;
+  height: 20px;
+  background: linear-gradient(to bottom, transparent, rgba(59, 130, 246, 0.3), transparent);
+  animation: dataFlow 3s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes dataFlow {
+  0% {
+    transform: translateY(-100px);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+}
+
+/* Responsive background adjustments */
+@media (max-width: 768px) {
+  .bg-documents-pattern,
+  .bg-upload-pattern,
+  .bg-chat-pattern,
+  .bg-search-pattern,
+  .bg-dashboard-pattern,
+  .bg-auth-pattern,
+  .bg-digital-twin-pattern {
+    background-attachment: scroll, scroll, scroll, scroll, scroll;
+    background-size: cover, 100% 100%, 400px 400px, 300px 300px, 200px 200px;
+    /* Simplify SVG backgrounds on mobile for performance */
+    background-image: 
+      linear-gradient(135deg, rgba(59, 130, 246, 0.03) 0%, rgba(147, 197, 253, 0.03) 100%),
+      radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.05) 0%, transparent 70%);
+    background-size: 100% 100%, 600px 600px;
+    background-position: center, center;
+  }
+  
+  .floating-document {
+    display: none; /* Hide floating elements on mobile for performance */
+  }
+  
+  .data-flow {
+    display: none; /* Hide data flow on mobile */
+  }
+}
+
+@media (max-width: 480px) {
+  .bg-documents-pattern,
+  .bg-upload-pattern,
+  .bg-chat-pattern,
+  .bg-search-pattern,
+  .bg-dashboard-pattern,
+  .bg-auth-pattern,
+  .bg-digital-twin-pattern {
+    /* Minimal background on very small screens */
+    background-image: linear-gradient(135deg, rgba(59, 130, 246, 0.02) 0%, rgba(147, 197, 253, 0.02) 100%);
+    background-size: 100% 100%;
+    background-position: center;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .bg-documents-pattern,
+  .bg-upload-pattern,
+  .bg-chat-pattern,
+  .bg-search-pattern,
+  .bg-dashboard-pattern,
+  .bg-auth-pattern,
+  .bg-digital-twin-pattern {
+    background-image: none;
+    background-color: white;
+  }
+}
+
+/* Performance optimization for slow devices */
+@media (max-resolution: 1dppx) {
+  .floating-document,
+  .data-flow {
+    display: none;
+  }
+  
+  .bg-documents-pattern,
+  .bg-upload-pattern,
+  .bg-chat-pattern,
+  .bg-search-pattern,
+  .bg-dashboard-pattern,
+  .bg-auth-pattern,
+  .bg-digital-twin-pattern {
+    background-attachment: scroll;
+    background-size: 100% 100%;
+  }
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .floating-document,
+  .data-flow,
+  .processing-dots::before,
+  .processing-dots::after {
+    animation: none;
+  }
+  
+  .bg-documents-pattern,
+  .bg-upload-pattern,
+  .bg-chat-pattern,
+  .bg-search-pattern,
+  .bg-dashboard-pattern,
+  .bg-auth-pattern,
+  .bg-digital-twin-pattern {
+    background-attachment: scroll;
   }
 }

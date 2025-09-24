@@ -40,7 +40,8 @@ async def get_dashboard_data(
             """),
             {"user_id": current_user.user_id}
         )
-        risk_data = [{"risk_level": row[0], "count": row[1]} for row in risk_distribution.fetchall()]
+        risk_rows = risk_distribution.fetchall()
+        risk_data = [{"risk_level": row[0] or "unprocessed", "count": row[1] or 0} for row in risk_rows]
         
         # Recent activity - exclude raw_bytes to prevent memory issues
         recent_contracts = await db.execute(
@@ -64,12 +65,15 @@ async def get_dashboard_data(
             for contract in recent_contracts.all()
         ]
         
+        processed_contracts = sum(item["count"] for item in risk_data if item["risk_level"] != "unprocessed")
+        high_risk_contracts = next((item["count"] for item in risk_data if item["risk_level"] == "high"), 0)
+        
         return {
             "user_id": current_user.user_id,
             "summary": {
-                "total_contracts": total_contracts,
-                "processed_contracts": sum(item["count"] for item in risk_data if item["risk_level"] != "unprocessed"),
-                "high_risk_contracts": next((item["count"] for item in risk_data if item["risk_level"] == "high"), 0)
+                "total_contracts": total_contracts or 0,
+                "processed_contracts": processed_contracts,
+                "high_risk_contracts": high_risk_contracts
             },
             "risk_distribution": risk_data,
             "recent_activity": recent_data,
@@ -87,6 +91,7 @@ async def get_risk_analysis(
     """Get detailed risk analysis across user's contracts"""
     try:
         # Get contracts with risk scores
+        # Note: TiDB doesn't support NULLS LAST, so we use CASE to handle nulls
         risk_analysis = await db.execute(
             text("""
                 SELECT 
@@ -95,32 +100,41 @@ async def get_risk_analysis(
                     gcs.overall_score,
                     gcs.risk_level,
                     gcs.category_scores,
-                    COUNT(gf.finding_id) as findings_count
+                    COALESCE(COUNT(gf.finding_id), 0) as findings_count
                 FROM bronze_contracts bc
                 LEFT JOIN gold_contract_scores gcs ON bc.contract_id = gcs.contract_id
                 LEFT JOIN gold_findings gf ON bc.contract_id = gf.contract_id
                 WHERE bc.owner_user_id = :user_id
                 GROUP BY bc.contract_id, bc.filename, gcs.overall_score, gcs.risk_level, gcs.category_scores
-                ORDER BY gcs.overall_score DESC NULLS LAST
+                ORDER BY CASE WHEN gcs.overall_score IS NULL THEN 1 ELSE 0 END, gcs.overall_score DESC
             """),
             {"user_id": current_user.user_id}
         )
         
         contracts = []
-        for row in risk_analysis.fetchall():
+        rows = risk_analysis.fetchall()
+        
+        for row in rows:
             contracts.append({
                 "contract_id": row[0],
-                "filename": row[1],
+                "filename": row[1] or "Unknown",  # Handle null filename
                 "overall_score": row[2],
                 "risk_level": row[3],
                 "category_scores": row[4],
-                "findings_count": row[5]
+                "findings_count": row[5] or 0  # Handle null count
             })
+        
+        analyzed_contracts = [c for c in contracts if c["overall_score"] is not None]
+        total_analyzed = len(analyzed_contracts)
+        average_score = 0
+        
+        if total_analyzed > 0:
+            average_score = sum(c["overall_score"] for c in analyzed_contracts) / total_analyzed
         
         return {
             "contracts": contracts,
-            "total_analyzed": len([c for c in contracts if c["overall_score"] is not None]),
-            "average_score": sum(c["overall_score"] for c in contracts if c["overall_score"]) / len(contracts) if contracts else 0
+            "total_analyzed": total_analyzed,
+            "average_score": average_score
         }
         
     except Exception as e:

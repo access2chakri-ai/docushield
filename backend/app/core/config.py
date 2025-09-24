@@ -4,6 +4,7 @@ Enhanced configuration for DocuShield Digital Twin Document Intelligence
 import os
 from typing import Optional
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 
 class Settings(BaseSettings):
     # Multi-Cluster TiDB Configuration
@@ -46,17 +47,24 @@ class Settings(BaseSettings):
             return f"mysql+pymysql://{self.tidb_analytics_user}:{self.tidb_analytics_password}@{self.tidb_analytics_host}:{self.tidb_analytics_port}/{self.tidb_analytics_database}"
         return f"mysql+pymysql://{self.tidb_analytics_user}@{self.tidb_analytics_host}:{self.tidb_analytics_port}/{self.tidb_analytics_database}"
     
-
-    
     # LLM Factory - Multi-provider API keys
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    google_api_key: str = os.getenv("GOOGLE_API_KEY", "")  # Google API key for Gemini
+    google_cloud_api_key: str = os.getenv("GOOGLE_CLOUD_API_KEY", "")  # Google Cloud API key for Vertex AI
+    google_cloud_project: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")  # Google Cloud Project ID
+    vertex_location: str = os.getenv("VERTEX_LOCATION", "global")  # Vertex AI location (global for preview models)
     groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    # AWS Configuration for Bedrock (uses standard AWS authentication)
+    aws_access_key_id: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+    aws_secret_access_key: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+    aws_session_token: str = os.getenv("AWS_SESSION_TOKEN", "")  # Optional for temporary credentials
+    aws_default_region: str = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
     
     # LLM Factory settings
-    default_llm_provider: str = os.getenv("DEFAULT_LLM_PROVIDER", "openai")
-    default_embedding_provider: str = os.getenv("DEFAULT_EMBEDDING_PROVIDER", "openai")
+    default_llm_provider: str = os.getenv("DEFAULT_LLM_PROVIDER", "bedrock")
+    default_embedding_provider: str = os.getenv("DEFAULT_EMBEDDING_PROVIDER", "bedrock")
     llm_fallback_enabled: bool = os.getenv("LLM_FALLBACK_ENABLED", "true").lower() == "true"
     llm_load_balancing: bool = os.getenv("LLM_LOAD_BALANCING", "false").lower() == "true"
     
@@ -97,7 +105,7 @@ class Settings(BaseSettings):
     monitoring_interval_minutes: int = int(os.getenv("MONITORING_INTERVAL_MINUTES", "5"))
     
     # Authentication settings
-    secret_key: str = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production-make-it-long-and-random")
+    secret_key: str = os.getenv("SECRET_KEY", "dev-secret-key-change-this-in-production")
     access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
     refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
     
@@ -107,5 +115,6 @@ class Settings(BaseSettings):
     
     class Config:
         env_file = ".env"
+        extra = "allow"  # Allow extra environment variables
 
 settings = Settings()

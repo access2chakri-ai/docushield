@@ -145,14 +145,16 @@ async def refresh_token(request: RefreshTokenRequest, db: AsyncSession = Depends
         raise HTTPException(status_code=500, detail=f"Token refresh failed: {str(e)}")
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_info(current_user = Depends(get_current_active_user)):
+async def get_current_user_info(current_user: User = Depends(get_current_active_user)):
     """Get current user information"""
     return UserResponse(
         user_id=current_user.user_id,
         email=current_user.email,
         name=current_user.name,
         is_active=current_user.is_active,
-        created_at=str(current_user.user_id)  # You can modify this to return actual created_at
+        profile_photo_url=current_user.profile_photo_url,
+        profile_photo_prompt=current_user.profile_photo_prompt,
+        created_at=str(current_user.created_at)
     )
 
 @router.post("/logout")
@@ -160,13 +162,12 @@ async def logout_user(current_user = Depends(get_current_active_user)):
     """Logout user (client should discard tokens)"""
     return {"message": "Successfully logged out"}
 
-@router.post("/reset-password")
-async def reset_password_by_email(
+@router.post("/request-password-reset")
+async def request_password_reset(
     email: str,
-    new_password: str,
     db: AsyncSession = Depends(get_operational_db)
 ):
-    """Simple password reset by email (for development/admin use)"""
+    """Request password reset - sends reset token to user's email"""
     try:
         # Find user by email
         result = await db.execute(
@@ -174,20 +175,42 @@ async def reset_password_by_email(
         )
         user = result.scalar_one_or_none()
         
+        # Always return success to prevent email enumeration
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
+            return {"message": "If the email exists, a password reset link has been sent"}
         
-        # Update password
-        user.password_hash = get_password_hash(new_password)
-        user.is_active = True  # Reactivate user
-        await db.commit()
+        # In a real implementation, you would:
+        # 1. Generate a secure reset token
+        # 2. Store it with expiration time
+        # 3. Send email with reset link
+        # For now, we'll just log it (remove in production)
+        import secrets
+        reset_token = secrets.token_urlsafe(32)
         
-        return {"message": f"Password reset successfully for {email}"}
+        # TODO: Implement proper email sending and token storage
+        # This is a placeholder implementation
+        return {"message": "If the email exists, a password reset link has been sent"}
         
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Password reset failed: {str(e)}")
+        # Don't reveal internal errors
+        return {"message": "If the email exists, a password reset link has been sent"}
+
+@router.post("/reset-password-with-token")
+async def reset_password_with_token(
+    reset_token: str,
+    new_password: str,
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """Reset password using a valid reset token"""
+    # TODO: Implement token validation logic
+    # This endpoint should:
+    # 1. Validate the reset token
+    # 2. Check if it's not expired
+    # 3. Find the associated user
+    # 4. Update the password
+    # 5. Invalidate the token
+    
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Password reset with token not yet implemented. Please contact administrator."
+    )

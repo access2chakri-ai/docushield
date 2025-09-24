@@ -23,6 +23,13 @@ class User(Base):
     name = Column(String(255), nullable=False)
     password_hash = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
+    
+    # Profile fields
+    profile_photo_url = Column(String(500), nullable=True)  # URL to generated/uploaded profile photo (legacy)
+    profile_photo_data = Column(LargeBinary, nullable=True)  # LONGBLOB - actual image data stored in DB
+    profile_photo_mime_type = Column(String(100), nullable=True)  # image/png, image/jpeg, etc.
+    profile_photo_prompt = Column(Text, nullable=True)  # Prompt used to generate the photo
+    
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     

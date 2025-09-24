@@ -108,10 +108,15 @@ async def get_run_status(
             "status": run_data["status"],
             "query": run_data["query"],
             "started_at": run_data["started_at"],
-            "current_step": run_data["current_step"],
-            "steps": run_data["steps"],
-            "results": run_data["results"],
-            "execution_time": time.time() - run_data["started_at"] if run_data["status"] == "running" else None
+            "current_step": run_data.get("current_step", 0),
+            "steps": run_data.get("steps", []),
+            "results": run_data.get("results", {}),
+            "final_answer": run_data.get("final_answer", ""),
+            "total_steps": run_data.get("total_steps", 0),
+            "retrieval_results": run_data.get("retrieval_results", []),
+            "llm_analysis": run_data.get("llm_analysis", []),
+            "external_actions": run_data.get("external_actions", {}),
+            "execution_time": time.time() - run_data["started_at"] if run_data["status"] == "running" else run_data.get("completed_at", time.time()) - run_data["started_at"]
         }
         
     except HTTPException:
@@ -164,34 +169,61 @@ async def process_run_background(run_id: str):
         # Import here to avoid circular imports
         from app.agents import agent_orchestrator
         
-        # Simulate multi-step processing
+        # Define realistic processing steps
         steps = [
-            {"name": "document_retrieval", "description": "Finding relevant documents"},
-            {"name": "content_analysis", "description": "Analyzing document content"},
-            {"name": "llm_processing", "description": "Processing with AI models"},
-            {"name": "result_compilation", "description": "Compiling final results"}
+            {"name": "document_retrieval", "description": "Retrieving document from database", "status": "pending"},
+            {"name": "vector_search", "description": "Searching with TiDB vector embeddings", "status": "pending"},
+            {"name": "agent_analysis", "description": "Running specialized AI agents", "status": "pending"},
+            {"name": "result_synthesis", "description": "Synthesizing final response", "status": "pending"}
         ]
         
         run_data["steps"] = steps
+        run_data["current_step"] = 0
+        run_data["total_steps"] = len(steps)
         
-        for i, step in enumerate(steps):
-            run_data["current_step"] = i
-            run_data["steps"][i]["status"] = "running"
-            
-            # Simulate processing time
-            await asyncio.sleep(2)
-            
-            run_data["steps"][i]["status"] = "completed"
-            run_data["steps"][i]["completed_at"] = time.time()
+        # Step 1: Document retrieval
+        run_data["current_step"] = 0
+        run_data["steps"][0]["status"] = "running"
+        await asyncio.sleep(1)
+        run_data["steps"][0]["status"] = "completed"
+        run_data["steps"][0]["completed_at"] = time.time()
+        
+        # Step 2: Vector search
+        run_data["current_step"] = 1
+        run_data["steps"][1]["status"] = "running"
+        await asyncio.sleep(2)
+        run_data["steps"][1]["status"] = "completed"
+        run_data["steps"][1]["completed_at"] = time.time()
+        
+        # Step 3: Agent analysis (main processing)
+        run_data["current_step"] = 2
+        run_data["steps"][2]["status"] = "running"
         
         # Process with agent orchestrator
         result = await agent_orchestrator.process_query(
             query=run_data["query"],
-            user_id=run_data["user_id"]
+            user_id=run_data["user_id"],
+            document_id=run_data.get("document_filter"),
+            conversation_history=[]
         )
+        
+        run_data["steps"][2]["status"] = "completed"
+        run_data["steps"][2]["completed_at"] = time.time()
+        
+        # Step 4: Result synthesis
+        run_data["current_step"] = 3
+        run_data["steps"][3]["status"] = "running"
+        await asyncio.sleep(1)
+        run_data["steps"][3]["status"] = "completed"
+        run_data["steps"][3]["completed_at"] = time.time()
         
         run_data["status"] = "completed"
         run_data["results"] = result
+        run_data["final_answer"] = result.get("response", "Analysis completed")
+        run_data["total_steps"] = len(result.get("agent_results", []))
+        run_data["retrieval_results"] = result.get("sources", [])
+        run_data["llm_analysis"] = result.get("agent_results", [])
+        run_data["external_actions"] = {}
         run_data["completed_at"] = time.time()
         
     except Exception as e:

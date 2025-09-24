@@ -15,6 +15,7 @@ from .clause_analyzer_agent import ClauseAnalyzerAgent
 from .simple_analyzer_agent import SimpleAnalyzerAgent
 from app.database import get_operational_db
 from app.models import ProcessingRun, ProcessingStep
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -459,6 +460,624 @@ class AgentOrchestrator:
             )
             await db.commit()
     
+    # =============================================================================
+    # QUERY PROCESSING FOR CHAT
+    # =============================================================================
+    
+    async def process_query(
+        self,
+        query: str,
+        user_id: str,
+        document_id: Optional[str] = None,
+        conversation_history: List[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Process a user query for chat interface with intelligent routing and enhanced context
+        """
+        try:
+            self.logger.info(f"Processing query: {query[:100]}... for user {user_id}, document: {document_id}")
+            
+            # Import query processor
+            from .query_processor import query_processor
+            
+            # Analyze the query to understand intent and requirements
+            user_context = {"user_id": user_id, "document_id": document_id}
+            query_analysis = await query_processor.analyze_query(query, user_context)
+            
+            self.logger.info(f"Query analysis: type={query_analysis.query_type.value}, intent={query_analysis.intent.value}, confidence={query_analysis.confidence}")
+            
+            # Route based on query analysis
+            if query_analysis.query_type.value == "help":
+                return await self._handle_help_query(query, query_analysis)
+            elif query_analysis.query_type.value == "general_info" and not document_id:
+                return await self._handle_general_info_query(query, query_analysis, user_id)
+            elif query_analysis.requires_document and not document_id:
+                # Need document but none provided - find best match
+                document_id = await self._find_best_document(query, user_id, query_analysis)
+                if not document_id:
+                    return await self._handle_no_document_available(query, user_id)
+            
+            # If document_id is provided or found, run targeted analysis with enhanced context
+            if document_id:
+                # First, verify document exists and get basic info
+                async for db in get_operational_db():
+                    from sqlalchemy import select
+                    from app.models import BronzeContract
+                    
+                    result = await db.execute(
+                        select(BronzeContract)
+                        .where(BronzeContract.contract_id == document_id)
+                        .where(BronzeContract.owner_user_id == user_id)
+                    )
+                    contract = result.scalar_one_or_none()
+                    
+                    if not contract:
+                        return {
+                            "response": f"I couldn't find the specified document. Please make sure you have access to it and try again.",
+                            "sources": [],
+                            "confidence": 0.0,
+                            "error": "Document not found"
+                        }
+                
+                # Run comprehensive analysis with better context
+                result = await self.run_comprehensive_analysis(
+                    contract_id=document_id,
+                    user_id=user_id,
+                    query=query,
+                    selected_agents=query_analysis.suggested_agents
+                )
+                
+                # Generate enhanced response with document context
+                response_text = self._generate_intelligent_response(result, query, query_analysis)
+                
+                # Add document context to the response
+                if contract:
+                    context_prefix = f"**Analyzing: {contract.filename}**\n\n"
+                    response_text = context_prefix + response_text
+                
+                # Convert orchestration result to chat response format
+                return {
+                    "response": response_text,
+                    "sources": self._extract_sources(result),
+                    "confidence": result.overall_confidence,
+                    "run_id": result.run_id,
+                    "document_context": {
+                        "document_id": document_id,
+                        "filename": contract.filename,
+                        "status": contract.status
+                    },
+                    "query_analysis": {
+                        "type": query_analysis.query_type.value,
+                        "intent": query_analysis.intent.value,
+                        "confidence": query_analysis.confidence
+                    },
+                    "agent_results": [asdict(r) for r in result.agent_results]
+                }
+            else:
+                # No specific document - search across user's documents
+                return await self._process_general_query(query, user_id, conversation_history, query_analysis)
+                
+        except Exception as e:
+            self.logger.error(f"Query processing failed: {e}")
+            return {
+                "response": f"I encountered an error processing your question: {str(e)}. Please try again or rephrase your question.",
+                "sources": [],
+                "confidence": 0.0,
+                "error": str(e)
+            }
+    
+    async def _handle_help_query(self, query: str, query_analysis) -> Dict[str, Any]:
+        """Handle help and guidance queries"""
+        help_response = """
+🤖 **DocuShield AI Assistant Help**
+
+I can help you with:
+
+📋 **Document Analysis:**
+• "Summarize this contract" - Get key points and overview
+• "What are the high-risk clauses?" - Identify problematic terms
+• "Find liability clauses" - Search for specific clause types
+
+⚖️ **Risk Assessment:**
+• "Is this contract safe to sign?" - Get risk evaluation
+• "What should I worry about?" - Highlight concerns
+• "Rate the risk level" - Overall risk scoring
+
+🔍 **Specific Questions:**
+• "What does clause 5 say about termination?" - Explain specific terms
+• "How much notice is required?" - Find specific details
+• "Who pays for damages?" - Understand obligations
+
+📊 **Document Stats:**
+• "How many pages is this?" - Basic document info
+• "When was this created?" - Metadata questions
+
+💡 **Recommendations:**
+• "Should I sign this?" - Get advice
+• "What changes should I request?" - Negotiation points
+
+**Tips:**
+• Be specific about what you want to know
+• Reference specific documents when possible
+• Ask follow-up questions for more details
+        """
+        
+        return {
+            "response": help_response,
+            "sources": [],
+            "confidence": 1.0,
+            "query_type": "help"
+        }
+    
+    async def _handle_general_info_query(self, query: str, query_analysis, user_id: str) -> Dict[str, Any]:
+        """Handle general information queries"""
+        # Get user's document count for context
+        async for db in get_operational_db():
+            from sqlalchemy import select, func
+            from app.models import BronzeContract
+            
+            result = await db.execute(
+                select(func.count(BronzeContract.contract_id))
+                .where(BronzeContract.owner_user_id == user_id)
+            )
+            doc_count = result.scalar() or 0
+            
+            processed_result = await db.execute(
+                select(func.count(BronzeContract.contract_id))
+                .where(BronzeContract.owner_user_id == user_id)
+                .where(BronzeContract.status == "completed")
+            )
+            processed_count = processed_result.scalar() or 0
+            
+        response = f"""
+📊 **Your DocuShield Account Overview**
+
+📁 **Documents:** {doc_count} total documents uploaded
+✅ **Processed:** {processed_count} documents analyzed
+⏳ **Pending:** {doc_count - processed_count} awaiting analysis
+
+💡 **What I can help you with:**
+• Ask questions about your processed documents
+• Get risk assessments and summaries
+• Find specific clauses or terms
+• Compare different contracts
+• Get recommendations for contract decisions
+
+**Try asking:**
+• "What are the risks in my latest contract?"
+• "Summarize my recent agreement"
+• "Find all liability clauses"
+• "Should I be concerned about anything?"
+
+Need help with a specific document? Upload it first, then ask me questions about it!
+        """
+        
+        return {
+            "response": response,
+            "sources": [],
+            "confidence": 0.9,
+            "query_type": "general_info"
+        }
+    
+    async def _find_best_document(self, query: str, user_id: str, query_analysis) -> Optional[str]:
+        """Find the most relevant document for the query"""
+        try:
+            async for db in get_operational_db():
+                from sqlalchemy import select
+                from app.models import BronzeContract
+                
+                # Get user's most recent processed document as fallback
+                result = await db.execute(
+                    select(BronzeContract)
+                    .where(BronzeContract.owner_user_id == user_id)
+                    .where(BronzeContract.status == "completed")
+                    .order_by(BronzeContract.created_at.desc())
+                    .limit(1)
+                )
+                recent_contract = result.scalar_one_or_none()
+                
+                if recent_contract:
+                    return recent_contract.contract_id
+                
+        except Exception as e:
+            self.logger.error(f"Error finding best document: {e}")
+        
+        return None
+    
+    async def _handle_no_document_available(self, query: str, user_id: str) -> Dict[str, Any]:
+        """Handle case where no documents are available"""
+        return {
+            "response": """
+📭 **No Documents Available**
+
+I'd love to help answer your question, but I don't see any processed documents in your account yet.
+
+**To get started:**
+1. 📤 Upload a document (contract, agreement, policy, etc.)
+2. ⏳ Wait for processing to complete
+3. 🤖 Ask me questions about it!
+
+**Example questions you can ask after uploading:**
+• "What are the key terms in this contract?"
+• "Are there any high-risk clauses?"
+• "Summarize this agreement"
+• "What should I be careful about?"
+
+Upload your first document and I'll be ready to help analyze it! 🚀
+            """,
+            "sources": [],
+            "confidence": 1.0,
+            "query_type": "no_documents"
+        }
+    
+    def _generate_intelligent_response(self, result: OrchestrationResult, original_query: str, query_analysis) -> str:
+        """Generate intelligent response based on query analysis"""
+        try:
+            # Use query analysis to format response appropriately
+            if query_analysis.response_format == "numbered_list":
+                return self._generate_list_response(result, original_query, query_analysis)
+            elif query_analysis.response_format == "count_with_details":
+                return self._generate_count_response(result, original_query, query_analysis)
+            elif query_analysis.response_format == "structured_summary":
+                return self._generate_summary_response(result, original_query, query_analysis)
+            elif query_analysis.response_format == "risk_assessment":
+                return self._generate_risk_response(result, original_query, query_analysis)
+            else:
+                return self._generate_conversational_response(result, original_query, query_analysis)
+        except Exception as e:
+            self.logger.error(f"Intelligent response generation failed: {e}")
+            # Fallback to original method
+            return self._generate_chat_response(result, original_query)
+    
+    def _generate_list_response(self, result: OrchestrationResult, query: str, analysis) -> str:
+        """Generate a numbered list response"""
+        response_parts = []
+        
+        if "high-risk" in query.lower() or "risk" in query.lower():
+            high_risk_findings = [f for f in result.consolidated_findings if f.get('severity') in ['critical', 'high']]
+            
+            if high_risk_findings:
+                response_parts.append(f"🚨 **Found {len(high_risk_findings)} High-Risk Items:**\n")
+                for i, finding in enumerate(high_risk_findings, 1):
+                    title = finding.get('title', 'Risk Item')
+                    desc = finding.get('description', 'Requires attention')
+                    severity = finding.get('severity', 'high')
+                    emoji = "🚨" if severity == "critical" else "⚠️"
+                    response_parts.append(f"{i}. {emoji} **{title}:** {desc}")
+            else:
+                response_parts.append("✅ **No High-Risk Items Found**\nThis document appears to have acceptable risk levels.")
+        
+        elif "clause" in query.lower():
+            all_findings = result.consolidated_findings
+            if all_findings:
+                response_parts.append(f"📋 **Found {len(all_findings)} Relevant Clauses:**\n")
+                for i, finding in enumerate(all_findings[:15], 1):  # Limit to 15
+                    title = finding.get('title', 'Clause')
+                    desc = finding.get('description', 'See details')
+                    response_parts.append(f"{i}. **{title}:** {desc}")
+            else:
+                response_parts.append("📋 **No Specific Clauses Found**\nTry asking about specific clause types like 'liability' or 'termination'.")
+        
+        # Add summary info
+        response_parts.append(f"\n📊 **Analysis:** {result.execution_time_ms:.0f}ms • {result.overall_confidence:.0%} confidence")
+        
+        return "\n".join(response_parts)
+    
+    def _generate_count_response(self, result: OrchestrationResult, query: str, analysis) -> str:
+        """Generate a count-focused response"""
+        response_parts = []
+        
+        # Count different types of findings
+        high_risk_count = len([f for f in result.consolidated_findings if f.get('severity') in ['critical', 'high']])
+        medium_risk_count = len([f for f in result.consolidated_findings if f.get('severity') == 'medium'])
+        low_risk_count = len([f for f in result.consolidated_findings if f.get('severity') == 'low'])
+        total_findings = len(result.consolidated_findings)
+        
+        response_parts.append("📊 **Document Analysis Count:**")
+        response_parts.append(f"• **Total Findings:** {total_findings}")
+        response_parts.append(f"• **High Risk:** {high_risk_count} items")
+        response_parts.append(f"• **Medium Risk:** {medium_risk_count} items")
+        response_parts.append(f"• **Low Risk:** {low_risk_count} items")
+        
+        if high_risk_count > 0:
+            response_parts.append(f"\n⚠️ **{high_risk_count} High-Risk Items Need Attention:**")
+            high_risk_findings = [f for f in result.consolidated_findings if f.get('severity') in ['critical', 'high']]
+            for i, finding in enumerate(high_risk_findings[:5], 1):  # Show top 5
+                title = finding.get('title', 'Risk Item')
+                response_parts.append(f"{i}. {title}")
+        
+        return "\n".join(response_parts)
+    
+    def _generate_summary_response(self, result: OrchestrationResult, query: str, analysis) -> str:
+        """Generate a structured summary response"""
+        # Use the existing summary logic but with enhanced structure
+        return self._generate_chat_response(result, query)
+    
+    def _generate_risk_response(self, result: OrchestrationResult, query: str, analysis) -> str:
+        """Generate a risk assessment response"""
+        response_parts = []
+        
+        # Risk overview
+        high_risk_count = len([f for f in result.consolidated_findings if f.get('severity') in ['critical', 'high']])
+        medium_risk_count = len([f for f in result.consolidated_findings if f.get('severity') == 'medium'])
+        
+        if high_risk_count > 0:
+            response_parts.append("🚨 **HIGH RISK DOCUMENT**")
+            response_parts.append(f"Found {high_risk_count} critical/high-risk issues requiring immediate attention.")
+        elif medium_risk_count > 0:
+            response_parts.append("⚠️ **MODERATE RISK DOCUMENT**")
+            response_parts.append(f"Found {medium_risk_count} medium-risk items that should be reviewed.")
+        else:
+            response_parts.append("✅ **LOW RISK DOCUMENT**")
+            response_parts.append("No significant risk factors identified.")
+        
+        # Show specific risks
+        if high_risk_count > 0:
+            response_parts.append("\n**🔍 Critical Issues:**")
+            high_risk_findings = [f for f in result.consolidated_findings if f.get('severity') in ['critical', 'high']]
+            for i, finding in enumerate(high_risk_findings[:5], 1):
+                title = finding.get('title', 'Risk Item')
+                desc = finding.get('description', 'Requires review')
+                response_parts.append(f"{i}. **{title}:** {desc}")
+        
+        # Recommendations
+        if result.consolidated_recommendations:
+            response_parts.append("\n💡 **Recommendations:**")
+            for rec in result.consolidated_recommendations[:3]:
+                clean_rec = rec.replace('[search_agent]', '').replace('[clause_analyzer]', '').replace('[simple_analyzer]', '').strip()
+                if clean_rec:
+                    response_parts.append(f"• {clean_rec}")
+        
+        return "\n".join(response_parts)
+    
+    def _generate_conversational_response(self, result: OrchestrationResult, query: str, analysis) -> str:
+        """Generate a conversational response"""
+        # Use enhanced chat response logic
+        return self._generate_chat_response(result, query)
+    
+    async def _process_general_query(
+        self,
+        query: str,
+        user_id: str,
+        conversation_history: List[Dict[str, Any]] = None,
+        query_analysis = None
+    ) -> Dict[str, Any]:
+        """Process a general query across user's documents"""
+        try:
+            # Get user's recent documents
+            async for db in get_operational_db():
+                from sqlalchemy import select
+                from app.models import BronzeContract
+                
+                result = await db.execute(
+                    select(BronzeContract)
+                    .where(BronzeContract.owner_user_id == user_id)
+                    .where(BronzeContract.status == "completed")
+                    .order_by(BronzeContract.created_at.desc())
+                    .limit(5)
+                )
+                recent_contracts = result.scalars().all()
+                
+                if not recent_contracts:
+                    return {
+                        "response": "I don't see any processed documents in your account yet. Please upload and process some documents first, then I'll be able to answer questions about them.",
+                        "sources": [],
+                        "confidence": 0.0
+                    }
+                
+                # For now, run analysis on the most recent document
+                # In a full implementation, this would do semantic search across all documents
+                most_recent = recent_contracts[0]
+                
+                result = await self.run_comprehensive_analysis(
+                    contract_id=most_recent.contract_id,
+                    user_id=user_id,
+                    query=query
+                )
+                
+                response = f"Based on your most recent document '{most_recent.filename}', here's what I found:\n\n"
+                response += self._generate_chat_response(result, query)
+                
+                if len(recent_contracts) > 1:
+                    response += f"\n\nNote: I analyzed your most recent document. You have {len(recent_contracts)} processed documents total. For more comprehensive analysis, please specify a particular document."
+                
+                return {
+                    "response": response,
+                    "sources": self._extract_sources(result),
+                    "confidence": result.overall_confidence * 0.8,  # Reduce confidence for general queries
+                    "run_id": result.run_id,
+                    "analyzed_document": most_recent.filename
+                }
+                
+        except Exception as e:
+            self.logger.error(f"General query processing failed: {e}")
+            return {
+                "response": "I encountered an error while searching your documents. Please try again or be more specific about which document you'd like me to analyze.",
+                "sources": [],
+                "confidence": 0.0,
+                "error": str(e)
+            }
+    
+    def _generate_chat_response(self, result: OrchestrationResult, original_query: str) -> str:
+        """Generate a natural language response from orchestration results"""
+        try:
+            if not result.overall_success:
+                return f"I had trouble analyzing the document. {result.consolidated_findings[0].get('description', 'Please try again.')}"
+            
+            response_parts = []
+            
+            # Check if this is a summary request
+            is_summary_request = any(word in original_query.lower() for word in ['summarize', 'summary', 'key findings', 'overview', 'main points'])
+            
+            # Add main findings
+            if result.consolidated_findings:
+                if is_summary_request:
+                    # For summary requests, show all relevant findings, not just high-priority
+                    relevant_findings = [
+                        f for f in result.consolidated_findings 
+                        if f.get('severity') in ['high', 'critical', 'medium'] or f.get('type') in ['document_stats', 'clause_analysis']
+                    ]
+                    
+                    if relevant_findings:
+                        response_parts.append("🔍 **Document Summary:**")
+                        
+                        # Count findings by severity
+                        high_risk = len([f for f in relevant_findings if f.get('severity') == 'high'])
+                        critical_risk = len([f for f in relevant_findings if f.get('severity') == 'critical'])
+                        medium_risk = len([f for f in relevant_findings if f.get('severity') == 'medium'])
+                        low_risk = len([f for f in relevant_findings if f.get('severity') == 'low'])
+                        
+                        # Document overview
+                        doc_stats = [f for f in relevant_findings if f.get('type') == 'document_stats']
+                        if doc_stats:
+                            stats = doc_stats[0]
+                            word_count = stats.get('word_count', 'unknown')
+                            response_parts.append(f"📄 **Document Overview:** {word_count} words analyzed")
+                        
+                        # Risk summary
+                        if critical_risk > 0 or high_risk > 0:
+                            total_high_risk = critical_risk + high_risk
+                            response_parts.append(f"🚨 **High Risk Issues:** {total_high_risk} critical/high-risk clauses identified requiring immediate legal review")
+                        
+                        if medium_risk > 0:
+                            response_parts.append(f"⚡ **Medium Risk Items:** {medium_risk} clauses need review for potential negotiation points")
+                        
+                        if low_risk > 0:
+                            response_parts.append(f"✅ **Low Risk Items:** {low_risk} standard clauses with minimal concerns")
+                        
+                        # Show specific high-risk findings
+                        high_risk_findings = [f for f in relevant_findings if f.get('severity') in ['critical', 'high']]
+                        if high_risk_findings:
+                            response_parts.append("\n**🔍 Key Risk Areas:**")
+                            for i, finding in enumerate(high_risk_findings[:10], 1):  # Show up to 10
+                                title = finding.get('title', 'Risk identified')
+                                desc = finding.get('description', 'See detailed analysis')
+                                severity = finding.get('severity', 'unknown')
+                                emoji = {"critical": "🚨", "high": "⚠️"}.get(severity, "•")
+                                response_parts.append(f"{i}. {emoji} **{title}:** {desc}")
+                            
+                            if len(high_risk_findings) > 10:
+                                response_parts.append(f"... and {len(high_risk_findings) - 10} more risk items")
+                        
+                        # Overall assessment
+                        if critical_risk > 0:
+                            response_parts.append("\n🔴 **Overall Assessment:** HIGH RISK - Immediate legal consultation recommended before signing")
+                        elif high_risk > 0:
+                            response_parts.append("\n🟡 **Overall Assessment:** MEDIUM RISK - Review and negotiate key terms before proceeding")
+                        elif medium_risk > 0:
+                            response_parts.append("\n🟢 **Overall Assessment:** LOW-MEDIUM RISK - Standard contract with some negotiable terms")
+                        else:
+                            response_parts.append("\n✅ **Overall Assessment:** LOW RISK - Standard contract terms with minimal concerns")
+                else:
+                    # For non-summary requests, show relevant findings based on query
+                    relevant_findings_for_query = []
+                    query_lower = original_query.lower()
+                    
+                    # If asking about specific types or counts, show more findings
+                    if any(word in query_lower for word in ['high-risk', 'high risk', 'clauses', 'what are', 'list', 'show']):
+                        relevant_findings_for_query = [
+                            f for f in result.consolidated_findings 
+                            if f.get('severity') in ['high', 'critical', 'medium']
+                        ]
+                    else:
+                        relevant_findings_for_query = [
+                            f for f in result.consolidated_findings 
+                            if f.get('severity') in ['high', 'critical']
+                        ]
+                    
+                    if relevant_findings_for_query:
+                        # Count high-risk items
+                        high_risk_count = len([f for f in relevant_findings_for_query if f.get('severity') in ['high', 'critical']])
+                        
+                        if high_risk_count > 0:
+                            response_parts.append(f"🚨 **HIGH RISK DOCUMENT**")
+                            response_parts.append(f"Found {high_risk_count} critical/high-risk issues requiring immediate attention.")
+                            response_parts.append("\n**🔍 Critical Issues:**")
+                            
+                            high_risk_items = [f for f in relevant_findings_for_query if f.get('severity') in ['high', 'critical']]
+                            for i, finding in enumerate(high_risk_items[:10], 1):  # Show up to 10 items
+                                title = finding.get('title', 'Risk identified')
+                                desc = finding.get('description', 'See detailed analysis')
+                                severity = finding.get('severity', 'unknown')
+                                severity_emoji = {"critical": "🚨", "high": "⚠️"}.get(severity, '•')
+                                
+                                # Add more specific details if available
+                                clause_type = finding.get('clause_type', '')
+                                match_count = finding.get('match_count', 0)
+                                matches = finding.get('matches', [])
+                                
+                                detail_parts = [desc]
+                                if clause_type:
+                                    detail_parts.append(f"Type: {clause_type}")
+                                if match_count > 0:
+                                    detail_parts.append(f"Found {match_count} instances")
+                                if matches:
+                                    detail_parts.append(f"Terms: {', '.join(matches[:3])}")
+                                
+                                full_desc = ' - '.join(detail_parts)
+                                response_parts.append(f"{i}. {severity_emoji} **{title}:** {full_desc}")
+                        
+                        # Also show medium risk if query asks for comprehensive list
+                        if 'clauses' in query_lower or 'list' in query_lower or 'show' in query_lower:
+                            medium_risk_items = [f for f in relevant_findings_for_query if f.get('severity') == 'medium']
+                            if medium_risk_items:
+                                response_parts.append(f"\n**⚡ Medium-Risk Items ({len(medium_risk_items)} found):**")
+                                for i, finding in enumerate(medium_risk_items[:10], 1):  # Show up to 10 medium risk
+                                    title = finding.get('title', 'Issue identified')
+                                    desc = finding.get('description', 'Requires review')
+                                    response_parts.append(f"{i}. ⚡ **{title}:** {desc}")
+                    else:
+                        response_parts.append("✅ No high-risk clauses found in this document.")
+            
+            # Add recommendations
+            if result.consolidated_recommendations:
+                response_parts.append("\n💡 **Recommendations:**")
+                for rec in result.consolidated_recommendations[:3]:  # Limit to top 3
+                    clean_rec = rec.replace('[search_agent]', '').replace('[clause_analyzer]', '').replace('[simple_analyzer]', '').strip()
+                    if clean_rec and not clean_rec.startswith('[') and not clean_rec.endswith(']'):
+                        response_parts.append(f"• {clean_rec}")
+            
+            # Add summary for cases where no significant findings
+            if not response_parts:
+                if is_summary_request:
+                    response_parts.append("📋 **Document Summary:**")
+                    response_parts.append("✅ Document appears to be standard with no critical risk factors identified")
+                    response_parts.append("✅ Basic analysis completed successfully")
+                    response_parts.append("✅ No high-risk clauses requiring immediate attention")
+                else:
+                    # Check what the user was asking about
+                    query_lower = original_query.lower()
+                    if any(word in query_lower for word in ['high-risk', 'high risk', 'risk', 'clauses']):
+                        response_parts.append("✅ **No High-Risk Clauses Found**")
+                        response_parts.append("The document analysis didn't identify any clauses that require immediate attention. This suggests the document has standard, acceptable terms.")
+                    else:
+                        response_parts.append("I've analyzed the document and found it to be in good shape with no significant concerns or issues identified.")
+            
+            # Add execution info
+            response_parts.append(f"\n📊 **Analysis Summary:** Processed in {result.execution_time_ms:.0f}ms using {len(result.agent_results)} specialized agents with {result.overall_confidence:.1%} confidence.")
+            
+            return "\n".join(response_parts)
+            
+        except Exception as e:
+            self.logger.error(f"Response generation failed: {e}")
+            return f"I analyzed the document but encountered an issue generating the response. The analysis found {len(result.consolidated_findings)} findings and {len(result.consolidated_recommendations)} recommendations."
+    
+    def _extract_sources(self, result: OrchestrationResult) -> List[Dict[str, Any]]:
+        """Extract source information from orchestration results"""
+        sources = []
+        
+        for agent_result in result.agent_results:
+            if agent_result.success and agent_result.data_used:
+                source = {
+                    "agent": agent_result.agent_name,
+                    "confidence": agent_result.confidence,
+                    "data_points": len(agent_result.data_used),
+                    "execution_time": agent_result.execution_time_ms
+                }
+                sources.append(source)
+        
+        return sources
+
     # =============================================================================
     # UTILITY METHODS
     # =============================================================================

@@ -1,0 +1,71 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="uploadGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f0fdf4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#dcfce7;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Upload pattern -->
+    <pattern id="uploadPattern" x="0" y="0" width="180" height="180" patternUnits="userSpaceOnUse">
+      <rect width="180" height="180" fill="transparent"/>
+      <g opacity="0.04">
+        <!-- Upload arrow -->
+        <path d="M90 40 L100 50 L95 50 L95 80 L85 80 L85 50 L80 50 Z" fill="#10b981"/>
+        <rect x="70" y="85" width="40" height="25" rx="3" stroke="#10b981" stroke-width="2" fill="none"/>
+        
+        <!-- Cloud -->
+        <path d="M50 130 C45 130 40 125 40 120 C40 115 45 110 50 110 C52 105 57 100 65 100 C73 100 78 105 80 110 C85 110 90 115 90 120 C90 125 85 130 80 130 Z" fill="#22c55e"/>
+        
+        <!-- Progress dots -->
+        <circle cx="120" cy="60" r="2" fill="#16a34a">
+          <animate attributeName="opacity" values="0.2;1;0.2" dur="2s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="130" cy="60" r="2" fill="#16a34a">
+          <animate attributeName="opacity" values="0.2;1;0.2" dur="2s" begin="0.5s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx="140" cy="60" r="2" fill="#16a34a">
+          <animate attributeName="opacity" values="0.2;1;0.2" dur="2s" begin="1s" repeatCount="indefinite"/>
+        </circle>
+      </g>
+    </pattern>
+    
+    <!-- Data flow lines -->
+    <linearGradient id="flowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#10b981;stop-opacity:0" />
+      <stop offset="50%" style="stop-color:#10b981;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#10b981;stop-opacity:0" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Base gradient -->
+  <rect width="1920" height="1080" fill="url(#uploadGradient)"/>
+  
+  <!-- Upload pattern overlay -->
+  <rect width="1920" height="1080" fill="url(#uploadPattern)"/>
+  
+  <!-- Animated data flow lines -->
+  <g opacity="0.6">
+    <rect x="0" y="200" width="60" height="2" fill="url(#flowGradient)">
+      <animateTransform attributeName="transform" type="translate" values="0 0;1920 0;0 0" dur="8s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="0" y="500" width="80" height="2" fill="url(#flowGradient)">
+      <animateTransform attributeName="transform" type="translate" values="0 0;1920 0;0 0" dur="10s" begin="2s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="0" y="800" width="70" height="2" fill="url(#flowGradient)">
+      <animateTransform attributeName="transform" type="translate" values="0 0;1920 0;0 0" dur="12s" begin="4s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+  
+  <!-- Upload success indicators -->
+  <g opacity="0.05">
+    <circle cx="300" cy="200" r="20" fill="#22c55e">
+      <animate attributeName="r" values="15;25;15" dur="6s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="1500" cy="400" r="15" fill="#16a34a">
+      <animate attributeName="r" values="10;20;10" dur="8s" begin="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="800" cy="700" r="18" fill="#15803d">
+      <animate attributeName="r" values="12;22;12" dur="7s" begin="4s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+</svg>

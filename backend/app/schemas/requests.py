@@ -42,6 +42,22 @@ class UserLoginRequest(BaseModel):
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
+# Profile Management
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+    profile_photo_prompt: Optional[str] = None
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+class GenerateProfilePhotoRequest(BaseModel):
+    prompt: str
+    size: str = "1024x1024"
+    quality: str = "standard"
+    style: str = "vivid"
+
 # Search
 class AdvancedSearchRequest(BaseModel):
     query: str

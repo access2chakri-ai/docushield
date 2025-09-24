@@ -27,14 +27,18 @@ async def advanced_search(
         # Convert string search type to enum
         search_type = SearchType(request.search_type.lower())
         
+        # Prepare filters including document filter
+        filters = request.filters or {}
+        if hasattr(request, 'document_filter') and request.document_filter:
+            filters['document_filter'] = request.document_filter
+        
         # Execute search
         search_response = await advanced_search_service.search(
             query=request.query,
             user_id=current_user.user_id,
             search_type=search_type,
-            document_filter=request.document_filter,
             limit=request.limit,
-            filters=request.filters or {}
+            filters=filters
         )
         
         return search_response

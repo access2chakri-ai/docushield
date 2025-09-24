@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from .base_agent import BaseAgent, AgentContext, AgentResult
 from app.database import get_operational_db
 from app.models import BronzeContract, SilverChunk, Token, SilverClauseSpan
-from app.services.llm_factory import LLMTask
+from app.services.llm_factory import llm_factory, LLMTask
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +167,103 @@ class SearchAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Semantic search failed: {e}")
             return []
+    
+    async def semantic_search_chunks(
+        self,
+        query: str,
+        contract_id: str = None,
+        limit: int = 10,
+        similarity_threshold: float = 0.5
+    ) -> List[Tuple[Dict[str, Any], float]]:
+        """
+        Perform TiDB vector search on chunk embeddings
+        Returns list of (chunk_data, similarity_score) tuples
+        """
+        try:
+            # Generate query embedding
+            embedding_result = await llm_factory.generate_embedding(
+                text=query,
+                task_type=LLMTask.EMBEDDING
+            )
+            query_embedding = embedding_result["embedding"]
+            
+            async for db in get_operational_db():
+                # Build base query
+                base_query = select(
+                    SilverChunk.chunk_id,
+                    SilverChunk.contract_id,
+                    SilverChunk.chunk_text,
+                    SilverChunk.start_offset,
+                    SilverChunk.end_offset,
+                    SilverChunk.chunk_order,
+                    SilverChunk.embedding
+                ).where(
+                    SilverChunk.embedding.is_not(None)  # Only chunks with embeddings
+                )
+                
+                # Add contract filter if specified
+                if contract_id:
+                    base_query = base_query.where(SilverChunk.contract_id == contract_id)
+                
+                # Execute query
+                result = await db.execute(base_query)
+                chunks = result.all()
+                
+                if not chunks:
+                    logger.warning(f"No chunks with embeddings found for query: {query[:50]}")
+                    return []
+                
+                # Calculate cosine similarity for each chunk
+                chunk_similarities = []
+                for chunk in chunks:
+                    if chunk.embedding:
+                        similarity = self._calculate_cosine_similarity(
+                            query_embedding, 
+                            chunk.embedding
+                        )
+                        
+                        if similarity >= similarity_threshold:
+                            chunk_data = {
+                                "chunk_id": chunk.chunk_id,
+                                "contract_id": chunk.contract_id,
+                                "chunk_text": chunk.chunk_text,
+                                "start_offset": chunk.start_offset,
+                                "end_offset": chunk.end_offset,
+                                "chunk_order": chunk.chunk_order
+                            }
+                            chunk_similarities.append((chunk_data, similarity))
+                
+                # Sort by similarity score (descending) and limit
+                chunk_similarities.sort(key=lambda x: x[1], reverse=True)
+                return chunk_similarities[:limit]
+                
+        except Exception as e:
+            logger.error(f"TiDB vector search failed: {e}")
+            return []
+    
+    def _calculate_cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """Calculate cosine similarity between two vectors"""
+        try:
+            import numpy as np
+            
+            # Convert to numpy arrays
+            a = np.array(vec1)
+            b = np.array(vec2)
+            
+            # Calculate cosine similarity
+            dot_product = np.dot(a, b)
+            norm_a = np.linalg.norm(a)
+            norm_b = np.linalg.norm(b)
+            
+            if norm_a == 0 or norm_b == 0:
+                return 0.0
+            
+            similarity = dot_product / (norm_a * norm_b)
+            return float(similarity)
+            
+        except Exception as e:
+            logger.error(f"Cosine similarity calculation failed: {e}")
+            return 0.0
     
     async def keyword_search_with_tokens(
         self, 
@@ -477,35 +574,57 @@ class SearchAgent(BaseAgent):
             }
     
     async def generate_search_recommendations(self, query: str, results: List[Dict]) -> List[str]:
-        """Generate search improvement recommendations"""
+        """Generate context-appropriate recommendations"""
         recommendations = []
         
-        if not results:
-            recommendations.extend([
-                "Try broader search terms",
-                "Check spelling and try synonyms", 
-                "Use document type filters",
-                "Try searching for specific clause types"
-            ])
-        elif len(results) < 3:
-            recommendations.extend([
-                "Try related keywords",
-                "Search across different document types",
-                "Use semantic search with descriptive phrases"
-            ])
-        else:
-            # Analyze result diversity
-            match_types = set()
-            for result in results:
-                match_types.update(result.get("match_types", []))
-            
-            if len(match_types) == 1:
-                recommendations.append(f"Results only from {list(match_types)[0]} search - try broader terms")
-            
-            if "semantic" not in match_types:
-                recommendations.append("Try descriptive phrases for semantic search")
-            
-            if "clause" not in match_types:
-                recommendations.append("Search for specific clause types (liability, termination, etc.)")
+        # Check if this is a summary/analysis query vs. a search query
+        is_analysis_query = any(word in query.lower() for word in [
+            'summarize', 'summary', 'key findings', 'overview', 'main points', 
+            'analyze', 'analysis', 'what does', 'tell me about'
+        ])
         
-        return recommendations[:5]  # Limit recommendations
+        if is_analysis_query:
+            # For analysis queries, provide document insights rather than search tips
+            if results:
+                recommendations.extend([
+                    "Document analysis completed using multi-modal search",
+                    "Review identified clauses and risk factors",
+                    "Consider legal consultation for high-risk items"
+                ])
+            else:
+                recommendations.extend([
+                    "No specific content found for this query",
+                    "Try asking about specific contract sections",
+                    "Consider reviewing the full document manually"
+                ])
+        else:
+            # For search queries, provide search improvement tips
+            if not results:
+                recommendations.extend([
+                    "Try broader search terms",
+                    "Check spelling and try synonyms", 
+                    "Use document type filters",
+                    "Try searching for specific clause types"
+                ])
+            elif len(results) < 3:
+                recommendations.extend([
+                    "Try related keywords",
+                    "Search across different document types",
+                    "Use semantic search with descriptive phrases"
+                ])
+            else:
+                # Analyze result diversity
+                match_types = set()
+                for result in results:
+                    match_types.update(result.get("match_types", []))
+                
+                if len(match_types) == 1:
+                    recommendations.append(f"Results only from {list(match_types)[0]} search - try broader terms")
+                
+                if "semantic" not in match_types:
+                    recommendations.append("Try descriptive phrases for semantic search")
+                
+                if "clause" not in match_types:
+                    recommendations.append("Search for specific clause types (liability, termination, etc.)")
+        
+        return recommendations[:3]  # Limit recommendations

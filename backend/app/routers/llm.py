@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional
 
 from app.core.dependencies import get_current_active_user
-from app.schemas.requests import LLMRequest
+from app.schemas.requests import LLMRequest, GenerateProfilePhotoRequest
 from app.services.llm_factory import llm_factory, LLMProvider, LLMTask
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
@@ -80,3 +80,23 @@ async def get_llm_usage_stats(current_user = Depends(get_current_active_user)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Usage stats failed: {str(e)}")
+
+@router.post("/generate-image")
+async def generate_image(
+    request: GenerateProfilePhotoRequest,
+    current_user = Depends(get_current_active_user)
+):
+    """Generate image using LLM Factory"""
+    try:
+        result = await llm_factory.generate_image(
+            prompt=request.prompt,
+            size=request.size,
+            quality=request.quality,
+            style=request.style,
+            preferred_provider=LLMProvider.OPENAI
+        )
+        
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Image generation failed: {str(e)}")

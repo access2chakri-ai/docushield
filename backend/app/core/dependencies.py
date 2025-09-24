@@ -43,17 +43,38 @@ async def get_current_user(
     return user_in_token
 
 async def get_current_active_user(
-    current_user: UserInToken = Depends(get_current_user)
-) -> UserInToken:
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_operational_db)
+) -> User:
     """
-    Dependency to get current active user (additional check)
+    Dependency to get current active user (returns full User model from DB)
     """
-    if not current_user.is_active:
+    # Extract user info from token
+    user_in_token = extract_user_from_token(credentials.credentials)
+    
+    # Fetch full user from database
+    result = await db.execute(
+        select(User).where(
+            (User.user_id == user_in_token.user_id) & 
+            (User.is_active == True)
+        )
+    )
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, 
             detail="Inactive user"
         )
-    return current_user
+    
+    return user
 
 def get_optional_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { authenticatedFetch } from '@/utils/auth';
 
 interface LLMUsageStats {
   summary: {
@@ -49,7 +50,7 @@ export default function ClaudeUsageStats({ userId }: ClaudeUsageStatsProps) {
     try {
       setLoading(true);
       const url = userId ? `/api/providers/usage?user_id=${userId}` : '/api/providers/usage';
-      const response = await fetch(`http://localhost:8000${url}`);
+      const response = await authenticatedFetch(`http://localhost:8000${url}`);
       
       if (response.ok) {
         const data = await response.json();
