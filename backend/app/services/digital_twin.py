@@ -8,7 +8,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
 from enum import Enum
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select, func
@@ -707,6 +707,110 @@ class DigitalTwinService:
             "operational_delay_hours": len(scenario.affected_documents) * 24,
             "compliance_risk_increase": len(scenario.affected_documents) * 0.1
         }
+
+    # =============================================================================
+    # API INTERFACE METHODS
+    # =============================================================================
+    
+    async def get_workflow_insights(
+        self, 
+        workflow_type: WorkflowType, 
+        user_id: str
+    ) -> Dict[str, Any]:
+        """Get workflow insights for API"""
+        return await self.generate_digital_twin_insights(workflow_type)
+    
+    async def create_simulation(
+        self,
+        scenario_name: str,
+        description: str,
+        document_ids: List[str],
+        parameter_changes: Dict[str, Any],
+        user_id: str
+    ) -> Dict[str, Any]:
+        """Create and run a simulation"""
+        scenario = await self.create_what_if_scenario(
+            name=scenario_name,
+            description=description,
+            document_ids=document_ids,
+            changes=parameter_changes
+        )
+        
+        results = await self.simulate_impact(scenario)
+        
+        return {
+            "simulation_id": scenario.scenario_id,
+            "scenario": asdict(scenario),
+            "simulation_results": results
+        }
+    
+    async def get_user_simulations(
+        self, 
+        user_id: str, 
+        limit: int = 20
+    ) -> List[Dict[str, Any]]:
+        """Get user's simulations - placeholder implementation"""
+        # In a real implementation, this would query a simulations table
+        return []
+    
+    async def get_simulation(
+        self, 
+        simulation_id: str, 
+        user_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get specific simulation - placeholder implementation"""
+        # In a real implementation, this would query the simulation by ID
+        return None
+    
+    async def run_workflow(
+        self,
+        workflow_type: WorkflowType,
+        document_ids: List[str],
+        user_id: str
+    ) -> Dict[str, Any]:
+        """Run a Digital Twin workflow on specific documents"""
+        try:
+            # Get document analyses for all selected documents
+            document_analyses = await self._analyze_affected_documents(document_ids)
+            
+            if not document_analyses:
+                return {
+                    "error": "No valid documents found for analysis",
+                    "status": "failed"
+                }
+            
+            # Create a scenario for this workflow run
+            scenario = SimulationScenario(
+                scenario_id=f"workflow_{workflow_type.value}_{int(datetime.utcnow().timestamp())}",
+                name=f"{workflow_type.value.replace('_', ' ').title()} Workflow Analysis",
+                description=f"Automated workflow analysis for {workflow_type.value} process",
+                affected_documents=document_ids,
+                parameter_changes={},
+                expected_impact={}
+            )
+            
+            # Run simulation for this workflow
+            simulation_results = await self.simulate_impact(scenario)
+            
+            # Get workflow insights
+            insights = await self.get_workflow_insights(workflow_type, user_id)
+            
+            return {
+                "workflow_type": workflow_type.value,
+                "document_count": len(document_analyses),
+                "simulation_results": simulation_results,
+                "workflow_insights": insights,
+                "execution_time": datetime.utcnow().isoformat(),
+                "status": "completed"
+            }
+            
+        except Exception as e:
+            logger.error(f"Workflow execution failed: {e}")
+            return {
+                "error": str(e),
+                "status": "failed",
+                "workflow_type": workflow_type.value
+            }
 
 # Global digital twin service instance
 digital_twin_service = DigitalTwinService()

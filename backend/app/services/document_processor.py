@@ -647,14 +647,33 @@ class DocumentProcessor:
         )
         text_raw = result.scalar_one()
         
-        # Check if clauses already extracted
+        # Check if clauses already extracted and clean up any duplicates
         result = await db.execute(
             select(SilverClauseSpan).where(SilverClauseSpan.contract_id == contract_id)
         )
         existing_clauses = result.scalars().all()
         
         if existing_clauses:
-            return {"status": "already_exists", "clause_count": len(existing_clauses)}
+            # Check for and remove duplicates
+            seen_positions = set()
+            duplicates_to_remove = []
+            
+            for clause in existing_clauses:
+                position_key = f"{clause.start_offset}-{clause.end_offset}-{clause.clause_type}"
+                if position_key in seen_positions:
+                    duplicates_to_remove.append(clause)
+                    logger.warning(f"Found duplicate clause span: {position_key}")
+                else:
+                    seen_positions.add(position_key)
+            
+            # Remove duplicates if found
+            if duplicates_to_remove:
+                for duplicate in duplicates_to_remove:
+                    await db.delete(duplicate)
+                await db.commit()
+                logger.info(f"Removed {len(duplicates_to_remove)} duplicate clause spans for contract {contract_id}")
+            
+            return {"status": "already_exists", "clause_count": len(existing_clauses) - len(duplicates_to_remove)}
         
         # Use AI to extract clauses with comprehensive analysis
         clauses = await self._extract_contract_clauses_comprehensive(text_raw.raw_text, contract_id, user_id)

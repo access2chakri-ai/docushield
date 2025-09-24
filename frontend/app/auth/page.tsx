@@ -113,8 +113,18 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex items-center justify-center">
-      <div className="max-w-md w-full mx-4">
+    <div className="min-h-screen bg-auth-pattern relative overflow-hidden flex items-center justify-center">
+      {/* Floating security elements */}
+      <div className="floating-document top-16 left-8 text-5xl">🔐</div>
+      <div className="floating-document top-32 right-12 text-4xl">🛡️</div>
+      <div className="floating-document bottom-28 left-1/6 text-6xl">🔑</div>
+      <div className="floating-document bottom-16 right-1/5 text-5xl">✨</div>
+      
+      {/* Security flow lines */}
+      <div className="data-flow top-0 left-1/4" style={{animationDelay: '1s'}}></div>
+      <div className="data-flow top-0 right-1/3" style={{animationDelay: '3s'}}></div>
+      
+      <div className="max-w-md w-full mx-4 relative z-10">
         <div className="bg-white rounded-xl shadow-lg p-8">
           {/* Header */}
           <div className="text-center mb-8">

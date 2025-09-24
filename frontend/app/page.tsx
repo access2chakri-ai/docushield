@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { config } from '../utils/config';
 
 interface DashboardStats {
   overview: {
@@ -38,19 +39,45 @@ export default function Home() {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await fetch('/api/analytics/dashboard');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch(`${config.apiBaseUrl}/api/analytics/dashboard`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
       if (response.ok) {
         const data = await response.json();
         setDashboardData(data);
+      } else {
+        console.warn('Dashboard API returned:', response.status);
       }
     } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.warn('Dashboard API request timed out');
+      } else {
+        console.error('Failed to fetch dashboard data:', error);
+      }
+      // Set empty dashboard data to prevent infinite loading
+      setDashboardData({
+        overview: { total_contracts: 0, recent_alerts: 0, processing_stats: {} },
+        risk_distribution: {},
+        provider_usage: {}
+      });
     }
   };
 
   const fetchProviderStatus = async () => {
     try {
-      const response = await fetch('/api/providers/status');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch(`${config.apiBaseUrl}/health`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
       if (response.ok) {
         const data = await response.json();
         // Handle the health endpoint response structure
@@ -67,9 +94,33 @@ export default function Home() {
           // Handle direct providers response
           setProviderStatus(data);
         }
+      } else {
+        console.warn('Health API returned:', response.status);
+        // Set fallback status
+        setProviderStatus({
+          providers: {},
+          settings: {
+            default_provider: 'openai',
+            fallback_enabled: true,
+            load_balancing: false
+          }
+        });
       }
     } catch (error) {
-      console.error('Failed to fetch provider status:', error);
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.warn('Health API request timed out');
+      } else {
+        console.error('Failed to fetch provider status:', error);
+      }
+      // Set fallback status to prevent infinite loading
+      setProviderStatus({
+        providers: {},
+        settings: {
+          default_provider: 'openai',
+          fallback_enabled: true,
+          load_balancing: false
+        }
+      });
     } finally {
       setLoading(false);
     }
@@ -86,8 +137,19 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-documents-pattern relative overflow-hidden">
+      {/* Floating document elements */}
+      <div className="floating-document top-20 left-10 text-6xl">📄</div>
+      <div className="floating-document top-40 right-20 text-5xl">📊</div>
+      <div className="floating-document bottom-32 left-1/4 text-4xl">🔍</div>
+      <div className="floating-document bottom-20 right-1/3 text-5xl">📋</div>
+      
+      {/* Subtle data flow lines */}
+      <div className="data-flow top-0 left-1/4" style={{animationDelay: '0s'}}></div>
+      <div className="data-flow top-0 right-1/3" style={{animationDelay: '1s'}}></div>
+      <div className="data-flow top-0 left-2/3" style={{animationDelay: '2s'}}></div>
+      
+      <div className="container mx-auto px-4 py-8 relative z-10">
         {/* Header */}
         <div className="text-center max-w-6xl mx-auto mb-16">
           <div className="flex justify-end mb-4">

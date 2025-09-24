@@ -15,7 +15,17 @@ class UserResponse(BaseModel):
     email: str
     name: str
     is_active: bool
+    profile_photo_url: Optional[str] = None
+    profile_photo_prompt: Optional[str] = None
     created_at: str
+
+class ProfilePhotoResponse(BaseModel):
+    success: bool
+    image_url: str
+    prompt: str
+    model: str
+    provider: str
+    estimated_cost: float
 
 # Document Management
 class ContractAnalysisResponse(BaseModel):

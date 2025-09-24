@@ -4,12 +4,14 @@ Document management router for DocuShield API
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 import asyncio
 import hashlib
 import logging
 import io
 from datetime import datetime, timedelta
+
 
 # Import PDF and DOCX processing libraries
 try:
@@ -23,13 +25,14 @@ except ImportError:
     docx = None
 
 from app.database import get_operational_db
-from app.models import User, BronzeContract, BronzeContractTextRaw, ProcessingRun
+from app.models import User, BronzeContract, BronzeContractTextRaw, ProcessingRun, GoldContractScore, GoldFinding, GoldSuggestion, Alert
 from app.core.dependencies import get_current_active_user
 from app.schemas.requests import ProcessContractRequest
 from app.schemas.responses import ContractAnalysisResponse
 from app.services.document_processor import document_processor
 from app.services.document_validator import document_validator, DocumentCategory
 from app.core.config import settings
+from app.routers.document_highlights import document_highlighter
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -437,6 +440,91 @@ async def retry_processing(
         logger.error(f"Retry processing failed: {e}")
         raise HTTPException(status_code=500, detail=f"Retry processing failed: {str(e)}")
 
+@router.get("/{contract_id}/content")
+async def get_contract_content(
+    contract_id: str,
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """Get contract content with text for document viewer"""
+    try:
+        # Get contract with text content
+        result = await db.execute(
+            select(BronzeContract).options(
+                selectinload(BronzeContract.text_raw)
+            ).where(
+                (BronzeContract.contract_id == contract_id) & 
+                (BronzeContract.owner_user_id == current_user.user_id)
+            )
+        )
+        contract = result.scalar_one_or_none()
+        
+        if not contract:
+            raise HTTPException(status_code=404, detail="Contract not found")
+        
+        return {
+            "contract_id": contract.contract_id,
+            "filename": contract.filename,
+            "status": contract.status,
+            "created_at": contract.created_at.isoformat() if contract.created_at else None,
+            "raw_text": contract.text_raw.raw_text if contract.text_raw else None,
+            "file_size": contract.file_size,
+            "mime_type": contract.mime_type
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get contract content: {str(e)}")
+
+@router.get("/{contract_id}/original")
+async def get_original_document(
+    contract_id: str,
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """Serve original document file directly"""
+    try:
+        # Get contract with raw bytes
+        result = await db.execute(
+            select(BronzeContract).where(
+                (BronzeContract.contract_id == contract_id) & 
+                (BronzeContract.owner_user_id == current_user.user_id)
+            )
+        )
+        contract = result.scalar_one_or_none()
+        
+        if not contract:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        if not contract.raw_bytes:
+            raise HTTPException(status_code=404, detail="Original document file not available")
+        
+        from fastapi.responses import Response
+        
+        # Determine content type
+        content_type = contract.mime_type or "application/octet-stream"
+        
+        # Set appropriate headers for iframe viewing
+        headers = {
+            "Content-Disposition": f'inline; filename="{contract.filename}"',
+            "Content-Length": str(len(contract.raw_bytes)),
+            "X-Frame-Options": "SAMEORIGIN",
+            "Cache-Control": "private, no-cache"
+        }
+        
+        return Response(
+            content=contract.raw_bytes,
+            media_type=content_type,
+            headers=headers
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to serve original document: {str(e)}")
+
+
 @router.get("/{contract_id}/analysis")
 async def get_contract_analysis(
     contract_id: str,
@@ -447,7 +535,9 @@ async def get_contract_analysis(
     try:
         # Get contract with all related data
         result = await db.execute(
-            select(BronzeContract).where(
+            select(BronzeContract).options(
+                selectinload(BronzeContract.clause_spans)
+            ).where(
                 (BronzeContract.contract_id == contract_id) & 
                 (BronzeContract.owner_user_id == current_user.user_id)
             )
@@ -465,29 +555,147 @@ async def get_contract_analysis(
         )
         runs = runs_result.scalars().all()
         
-        # Get analysis results from Gold layer
-        analysis_data = {
-            "contract_id": contract.contract_id,
-            "filename": contract.filename,
-            "status": contract.status,
-            "file_size": contract.file_size,
-            "mime_type": contract.mime_type,
-            "created_at": contract.created_at.isoformat(),
-            "processing_runs": [
-                {
-                    "run_id": run.run_id,
-                    "status": run.status,
-                    "started_at": run.started_at.isoformat() if run.started_at else None,
-                    "completed_at": run.completed_at.isoformat() if run.completed_at else None,
-                    "pipeline_version": run.pipeline_version
+        # Get analysis results from Gold layer - query actual TiDB data
+        
+        # Query gold contract scores
+        score_result = await db.execute(
+            select(GoldContractScore).where(GoldContractScore.contract_id == contract_id)
+        )
+        score = score_result.scalar_one_or_none()
+        
+        # Query gold findings
+        findings_result = await db.execute(
+            select(GoldFinding).where(GoldFinding.contract_id == contract_id)
+        )
+        findings = findings_result.scalars().all()
+        
+        # Query gold suggestions
+        suggestions_result = await db.execute(
+            select(GoldSuggestion).where(GoldSuggestion.contract_id == contract_id)
+        )
+        suggestions = suggestions_result.scalars().all()
+        
+        # Query alerts
+        alerts_result = await db.execute(
+            select(Alert).where(Alert.contract_id == contract_id)
+        )
+        alerts = alerts_result.scalars().all()
+        
+        # Create highlights from clause spans for document viewer
+        highlights = []
+        logger.info(f"Processing {len(contract.clause_spans) if contract.clause_spans else 0} clause spans for highlights")
+        
+        if contract.clause_spans and len(contract.clause_spans) > 0:
+            # Use existing clause spans
+            seen_positions = set()  # Track positions to avoid duplicates
+            
+            for clause_span in contract.clause_spans:
+                # Create a position key to identify duplicates
+                position_key = f"{clause_span.start_offset}-{clause_span.end_offset}-{clause_span.clause_type}"
+                
+                # Skip if we've already seen this exact position and clause type
+                if position_key in seen_positions:
+                    logger.debug(f"Skipping duplicate highlight at position {clause_span.start_offset}-{clause_span.end_offset} for {clause_span.clause_type}")
+                    continue
+                
+                seen_positions.add(position_key)
+                
+                # Map clause types to risk levels
+                risk_mapping = {
+                    "liability": "high",
+                    "termination": "medium", 
+                    "payment": "low",
+                    "confidentiality": "low",
+                    "intellectual_property": "high",
+                    "auto_renewal": "medium",
+                    "force_majeure": "low"
                 }
-                for run in runs
-            ],
-            "scores": None,
-            "findings": [],
-            "suggestions": [],
-            "summaries": []
+                
+                risk_level = risk_mapping.get(clause_span.clause_type, "medium")
+                
+                highlights.append({
+                    "start_offset": clause_span.start_offset,
+                    "end_offset": clause_span.end_offset,
+                    "risk_level": risk_level,
+                    "clause_type": clause_span.clause_type,
+                    "title": clause_span.clause_name or f"{clause_span.clause_type.replace('_', ' ').title()} Clause",
+                    "description": clause_span.snippet or f"Identified {clause_span.clause_type} clause",
+                    "confidence": clause_span.confidence or 0.8
+                })
+        else:
+            # Fallback: Generate highlights from text patterns
+            # Get text content
+            text_content = ""
+            if contract.text_raw and contract.text_raw.raw_text:
+                text_content = contract.text_raw.raw_text
+            
+            if text_content:
+                pattern_highlights = document_highlighter.generate_highlights(text_content)
+                
+                # Deduplicate pattern-based highlights as well
+                seen_positions = set()
+                for highlight in pattern_highlights:
+                    position_key = f"{highlight['start_offset']}-{highlight['end_offset']}-{highlight['clause_type']}"
+                    if position_key not in seen_positions:
+                        seen_positions.add(position_key)
+                        highlights.append(highlight)
+                
+                logger.info(f"Generated {len(highlights)} deduplicated pattern-based highlights for {contract_id}")
+
+        # Build response with actual TiDB data
+        analysis_data = {
+            "contract": {
+                "contract_id": contract.contract_id,
+                "filename": contract.filename,
+                "status": contract.status,
+                "created_at": contract.created_at.isoformat()
+            },
+            "score": {
+                "overall_score": score.overall_score,
+                "risk_level": score.risk_level,
+                "category_scores": score.category_scores or {}
+            } if score else None,
+            "findings": [
+                {
+                    "finding_id": finding.finding_id,
+                    "type": finding.finding_type,
+                    "severity": finding.severity,
+                    "title": finding.title,
+                    "description": finding.description,
+                    "confidence": finding.confidence
+                }
+                for finding in findings
+            ] if findings else [],
+            "suggestions": [
+                {
+                    "suggestion_id": suggestion.suggestion_id,
+                    "type": suggestion.suggestion_type,
+                    "title": suggestion.title,
+                    "description": suggestion.description,
+                    "priority": suggestion.priority,
+                    "status": suggestion.status
+                }
+                for suggestion in suggestions
+            ] if suggestions else [],
+            "alerts": [
+                {
+                    "alert_id": alert.alert_id,
+                    "type": alert.alert_type,
+                    "severity": alert.severity,
+                    "title": alert.title,
+                    "status": alert.status,
+                    "created_at": alert.created_at.isoformat()
+                }
+                for alert in alerts
+            ] if alerts else [],
+            "highlights": highlights  # Add highlights for document viewer
         }
+        
+        logger.info(f"📊 Analysis data retrieved for {contract_id}: "
+                   f"Score: {'✓' if score else '✗'}, "
+                   f"Findings: {len(findings)}, "
+                   f"Suggestions: {len(suggestions)}, "
+                   f"Alerts: {len(alerts)}")
         
         return analysis_data
         
@@ -535,9 +743,83 @@ async def process_contract(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
+@router.post("/{contract_id}/force-stop")
+async def force_stop_processing(
+    contract_id: str,
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """Force stop stuck processing and reset document status"""
+    try:
+        # Get the contract
+        result = await db.execute(
+            select(BronzeContract).where(
+                BronzeContract.contract_id == contract_id,
+                BronzeContract.owner_user_id == current_user.user_id
+            )
+        )
+        contract = result.scalar_one_or_none()
+        
+        if not contract:
+            raise HTTPException(
+                status_code=404,
+                detail="Document not found or you don't have permission to modify it"
+            )
+        
+        # Force stop processing
+        logger.info(f"🛑 Force stopping processing for contract {contract_id}")
+        
+        # Update all running processing runs to failed
+        await db.execute(
+            text("""
+                UPDATE processing_runs 
+                SET status = 'force_stopped', 
+                    error_message = 'Processing force stopped by user',
+                    completed_at = NOW()
+                WHERE contract_id = :contract_id 
+                AND status IN ('running', 'pending')
+            """),
+            {"contract_id": contract_id}
+        )
+        
+        # Update all running processing steps to failed
+        await db.execute(
+            text("""
+                UPDATE processing_steps 
+                SET status = 'force_stopped',
+                    error_message = 'Processing force stopped by user'
+                WHERE run_id IN (
+                    SELECT run_id FROM processing_runs WHERE contract_id = :contract_id
+                ) AND status IN ('running', 'pending')
+            """),
+            {"contract_id": contract_id}
+        )
+        
+        # Reset contract status to uploaded so it can be processed again or deleted
+        contract.status = "uploaded"
+        await db.commit()
+        
+        return {
+            "message": "Processing force stopped successfully",
+            "contract_id": contract_id,
+            "filename": contract.filename,
+            "status": "uploaded"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to force stop processing for {contract_id}: {e}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to force stop processing: {str(e)}"
+        )
+
 @router.delete("/{contract_id}")
 async def delete_document(
     contract_id: str,
+    force: bool = False,
     current_user = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_operational_db)
 ):
@@ -556,6 +838,30 @@ async def delete_document(
             raise HTTPException(
                 status_code=404,
                 detail="Document not found or you don't have permission to delete it"
+            )
+        
+        # Check if document is processing and force is not set
+        if contract.status == "processing" and not force:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete document while processing. Use force=true parameter or force-stop processing first."
+            )
+        
+        # If force delete, stop processing first
+        if contract.status == "processing" and force:
+            logger.info(f"🛑 Force stopping processing before deletion for contract {contract_id}")
+            
+            # Force stop processing
+            await db.execute(
+                text("""
+                    UPDATE processing_runs 
+                    SET status = 'force_stopped', 
+                        error_message = 'Processing stopped due to force delete',
+                        completed_at = NOW()
+                    WHERE contract_id = :contract_id 
+                    AND status IN ('running', 'pending')
+                """),
+                {"contract_id": contract_id}
             )
         
         # Delete all associated data in correct order (respecting foreign keys)

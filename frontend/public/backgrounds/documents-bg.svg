@@ -1,0 +1,55 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="docGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8fafc;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e2e8f0;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Document icons pattern -->
+    <pattern id="docPattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
+      <rect width="200" height="200" fill="transparent"/>
+      <g opacity="0.03">
+        <!-- Document icon -->
+        <rect x="50" y="40" width="60" height="80" rx="4" fill="#3b82f6"/>
+        <rect x="55" y="50" width="50" height="2" fill="#ffffff"/>
+        <rect x="55" y="60" width="40" height="2" fill="#ffffff"/>
+        <rect x="55" y="70" width="45" height="2" fill="#ffffff"/>
+        <rect x="55" y="80" width="35" height="2" fill="#ffffff"/>
+        
+        <!-- Folder icon -->
+        <path d="M130 60 L140 60 L145 70 L180 70 L180 110 L130 110 Z" fill="#10b981"/>
+        <rect x="135" y="75" width="40" height="2" fill="#ffffff"/>
+        <rect x="135" y="85" width="35" height="2" fill="#ffffff"/>
+        <rect x="135" y="95" width="30" height="2" fill="#ffffff"/>
+      </g>
+    </pattern>
+    
+    <!-- Floating particles -->
+    <circle id="particle" r="1" fill="#3b82f6" opacity="0.1">
+      <animate attributeName="opacity" values="0.1;0.3;0.1" dur="4s" repeatCount="indefinite"/>
+    </circle>
+  </defs>
+  
+  <!-- Base gradient -->
+  <rect width="1920" height="1080" fill="url(#docGradient)"/>
+  
+  <!-- Document pattern overlay -->
+  <rect width="1920" height="1080" fill="url(#docPattern)"/>
+  
+  <!-- Floating particles -->
+  <use href="#particle" x="200" y="150"/>
+  <use href="#particle" x="800" y="300"/>
+  <use href="#particle" x="1400" y="200"/>
+  <use href="#particle" x="600" y="600"/>
+  <use href="#particle" x="1200" y="800"/>
+  <use href="#particle" x="300" y="900"/>
+  <use href="#particle" x="1600" y="700"/>
+  
+  <!-- Subtle geometric shapes -->
+  <g opacity="0.02">
+    <polygon points="100,50 150,100 100,150 50,100" fill="#8b5cf6"/>
+    <polygon points="1700,200 1750,250 1700,300 1650,250" fill="#06b6d4"/>
+    <polygon points="400,800 450,850 400,900 350,850" fill="#f59e0b"/>
+    <polygon points="1300,600 1350,650 1300,700 1250,650" fill="#ef4444"/>
+  </g>
+</svg>

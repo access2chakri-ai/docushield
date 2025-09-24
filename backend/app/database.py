@@ -147,14 +147,22 @@ async def create_sandbox_branch(source_cluster: ClusterType = ClusterType.OPERAT
                 # Clear existing sandbox data
                 await sandbox_session.execute(text("DELETE FROM documents"))
                 
-                # Copy documents to sandbox
+                # Copy documents to sandbox using parameterized queries
                 for doc in documents:
                     await sandbox_session.execute(
                         text("""
                             INSERT INTO documents (id, title, content, file_type, dataset_id, embedding, created_at)
                             VALUES (:id, :title, :content, :file_type, :dataset_id, :embedding, :created_at)
                         """),
-                        dict(doc._asdict())
+                        {
+                            "id": doc.id,
+                            "title": doc.title,
+                            "content": doc.content,
+                            "file_type": doc.file_type,
+                            "dataset_id": doc.dataset_id,
+                            "embedding": doc.embedding,
+                            "created_at": doc.created_at
+                        }
                     )
                 
                 await sandbox_session.commit()

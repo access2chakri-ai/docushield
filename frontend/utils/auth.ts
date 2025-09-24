@@ -7,6 +7,8 @@ export interface User {
   email: string;
   name: string;
   is_active: boolean;
+  profile_photo_url?: string | null;
+  profile_photo_prompt?: string | null;
 }
 
 export interface AuthTokens {
@@ -26,7 +28,9 @@ export interface RegisterRequest {
   password: string;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { config } from './config';
+
+const API_BASE_URL = config.apiBaseUrl;
 
 // Token storage keys
 const ACCESS_TOKEN_KEY = 'docushield_access_token';
@@ -83,10 +87,14 @@ export function clearAuthData(): void {
 }
 
 /**
- * Check if user is authenticated
+ * Check if user is authenticated (with valid, non-expired token)
  */
 export function isAuthenticated(): boolean {
-  return getAccessToken() !== null;
+  const token = getAccessToken();
+  if (!token) return false;
+  
+  // Only check if token is actually expired (not the buffer check)
+  return !isTokenActuallyExpired(token);
 }
 
 /**
@@ -117,14 +125,38 @@ function decodeJWT(token: string): any {
 }
 
 /**
- * Check if token is expired
+ * Check if token is expired or will expire soon (within 5 minutes)
  */
 export function isTokenExpired(token: string): boolean {
   const payload = decodeJWT(token);
   if (!payload || !payload.exp) return true;
   
   const currentTime = Math.floor(Date.now() / 1000);
+  const bufferTime = 5 * 60; // 5 minutes buffer
+  return payload.exp < (currentTime + bufferTime);
+}
+
+/**
+ * Check if token is actually expired (no buffer)
+ */
+export function isTokenActuallyExpired(token: string): boolean {
+  const payload = decodeJWT(token);
+  if (!payload || !payload.exp) return true;
+  
+  const currentTime = Math.floor(Date.now() / 1000);
   return payload.exp < currentTime;
+}
+
+/**
+ * Get time until token expires (in minutes)
+ */
+export function getTokenExpirationTime(token: string): number {
+  const payload = decodeJWT(token);
+  if (!payload || !payload.exp) return 0;
+  
+  const currentTime = Math.floor(Date.now() / 1000);
+  const timeLeft = payload.exp - currentTime;
+  return Math.max(0, Math.floor(timeLeft / 60)); // Convert to minutes
 }
 
 /**
@@ -270,49 +302,99 @@ export async function logout(): Promise<void> {
  */
 export async function authenticatedFetch(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  timeoutMs: number = config.apiTimeout // Use config timeout, can be overridden for AI operations
 ): Promise<Response> {
   let token = getAccessToken();
   
-  // Check if token is expired and try to refresh
+  // Check if token is expired or will expire soon, and try to refresh proactively
   if (token && isTokenExpired(token)) {
+    console.log('Token expires soon, attempting refresh...');
     const refreshed = await refreshToken();
     if (!refreshed) {
-      clearAuthData();
-      throw new Error('Session expired. Please login again.');
+      // Only clear auth data if token is actually expired
+      if (isTokenActuallyExpired(token)) {
+        clearAuthData();
+        throw new Error('Session expired. Please login again.');
+      }
+      // If refresh failed but token is still valid, continue with current token
+      console.warn('Token refresh failed, but current token is still valid');
+    } else {
+      token = getAccessToken();
+      console.log('Token refreshed successfully');
     }
-    token = getAccessToken();
   }
 
   if (!token) {
     throw new Error('No authentication token available');
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  // Configurable timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  // If we get 401, try to refresh token once
-  if (response.status === 401) {
-    const refreshed = await refreshToken();
-    if (refreshed) {
-      const newToken = getAccessToken();
-      return fetch(url, {
-        ...options,
-        headers: {
-          ...options.headers,
-          Authorization: `Bearer ${newToken}`,
-        },
-      });
-    } else {
-      clearAuthData();
-      throw new Error('Session expired. Please login again.');
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    clearTimeout(timeoutId);
+
+    // If we get 401, try to refresh token once
+    if (response.status === 401) {
+      const refreshed = await refreshToken();
+      if (refreshed) {
+        const newToken = getAccessToken();
+        const retryController = new AbortController();
+        const retryTimeoutId = setTimeout(() => retryController.abort(), timeoutMs);
+        
+        try {
+          const retryResponse = await fetch(url, {
+            ...options,
+            signal: retryController.signal,
+            headers: {
+              ...options.headers,
+              Authorization: `Bearer ${newToken}`,
+            },
+          });
+          clearTimeout(retryTimeoutId);
+          return retryResponse;
+        } catch (retryError) {
+          clearTimeout(retryTimeoutId);
+          if (retryError instanceof Error && retryError.name === 'AbortError') {
+            throw new Error('Request timed out after token refresh');
+          }
+          throw retryError;
+        }
+        } else {
+        clearAuthData();
+        throw new Error('Session expired. Please login again.');
+      }
     }
-  }
 
-  return response;
+    // Handle other HTTP error status codes
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(errorText || `HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Request timed out');
+    }
+    
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error('Unable to connect to server');
+    }
+    
+    throw error;
+  }
 }

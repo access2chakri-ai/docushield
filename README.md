@@ -37,7 +37,7 @@ Unlike simple Q&A systems, DocuShield creates an **autonomous agent** that:
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
-- OpenAI API Key
+- Amazon Bedrock API Key (default) or OpenAI API Key
 - TiDB Cloud account (or local TiDB)
 
 ### 1. Clone & Setup
@@ -66,8 +66,13 @@ TIDB_USER=your_username
 TIDB_PASSWORD=your_password
 TIDB_DATABASE=docushield
 
-# OpenAI API Key
-OPENAI_API_KEY=your_openai_key_here
+# AWS Configuration for Bedrock (Standard AWS Authentication)
+AWS_ACCESS_KEY_ID=your_aws_access_key_id
+AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
+AWS_DEFAULT_REGION=us-east-1
+
+# Optional: Other provider API keys for fallback
+# OPENAI_API_KEY=your_openai_key_here
 ```
 
 ### 3. Run the Application
@@ -87,7 +92,9 @@ Visit **http://localhost:3000** to see the demo!
 export TIDB_HOST="your-tidb-host"
 export TIDB_USER="your-username"
 export TIDB_PASSWORD="your-password"
-export OPENAI_API_KEY="your-openai-key"
+export AWS_ACCESS_KEY_ID="your-aws-access-key-id"
+export AWS_SECRET_ACCESS_KEY="your-aws-secret-access-key"
+export AWS_DEFAULT_REGION="us-east-1"
 
 # Start all services
 docker-compose up -d
@@ -117,6 +124,29 @@ docker-compose up -d
 - Comprehensive answers with source citations
 - Execution metrics (steps, timing, documents used)
 - Full transparency into the agent's reasoning
+
+## 🤖 LLM Provider Support
+
+DocuShield now supports multiple LLM providers with automatic fallback:
+
+### 🥇 Amazon Bedrock (Default)
+- **Model**: Nova Lite (`amazon.nova-lite-v1:0`)
+- **Features**: High-quality completions, cost-effective
+- **Embeddings**: Titan Text Embeddings V2 (`amazon.titan-embed-text-v2:0`)
+- **Setup**: Get your API key from [AWS Bedrock Console](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html)
+
+### 🔄 Supported Providers
+1. **Amazon Bedrock** (Nova Lite) - Default
+2. **OpenAI** (GPT-4, GPT-3.5-turbo)
+3. **Anthropic** (Claude 4, Claude 3.5)
+4. **Google Gemini** (Gemini Pro)
+5. **Groq** (Mixtral, LLaMA)
+
+Configure via environment variables:
+```bash
+DEFAULT_LLM_PROVIDER=bedrock  # bedrock, openai, anthropic, gemini, groq
+LLM_FALLBACK_ENABLED=true    # Auto-fallback on errors
+```
 
 ## 🏗️ Technical Architecture
 
