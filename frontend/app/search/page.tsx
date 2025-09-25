@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
+import { config } from '@/utils/config';
 
 interface SearchResult {
   document_id: string;
@@ -59,7 +60,7 @@ export default function AdvancedSearchPage() {
 
   const loadSuggestions = async () => {
     try {
-      const response = await authenticatedFetch('http://localhost:8000/api/search/suggestions');
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/search/suggestions`);
       if (response.ok) {
         const data = await response.json();
         setSuggestions(data.suggestions || []);
@@ -75,7 +76,7 @@ export default function AdvancedSearchPage() {
     setIsLoading(true);
 
     try {
-      const response = await authenticatedFetch('http://localhost:8000/api/search/advanced', {
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/search/advanced`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

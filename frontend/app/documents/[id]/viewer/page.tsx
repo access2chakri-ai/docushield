@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
+import { config } from '@/utils/config';
 
 interface RiskHighlight {
   start_offset: number;
@@ -66,8 +67,8 @@ export default function DocumentViewerPage() {
       
       // Get document content and analysis
       const [documentResponse, analysisResponse] = await Promise.all([
-        authenticatedFetch(`http://localhost:8000/api/documents/${documentId}/content`),
-        authenticatedFetch(`http://localhost:8000/api/documents/${documentId}/analysis`)
+        authenticatedFetch(`${config.apiBaseUrl}/api/documents/${documentId}/content`),
+        authenticatedFetch(`${config.apiBaseUrl}/api/documents/${documentId}/analysis`)
       ]);
 
       if (!documentResponse.ok || !analysisResponse.ok) {
@@ -182,7 +183,7 @@ export default function DocumentViewerPage() {
   const renderOriginalDocument = () => {
     if (!document) return null;
 
-    const originalDocUrl = `http://localhost:8000/api/documents/${documentId}/original`;
+    const originalDocUrl = `${config.apiBaseUrl}/api/documents/${documentId}/original`;
     
     // Check if it's a PDF
     if (document.filename.toLowerCase().endsWith('.pdf')) {

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
+import { config } from '@/utils/config';
 
 
 
@@ -78,7 +79,7 @@ export default function DocumentAnalysisPage() {
     
     try {
       setLoading(true);
-      const response = await authenticatedFetch(`http://localhost:8000/api/documents/${contractId}/analysis?user_id=${user.user_id}`);
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/${contractId}/analysis?user_id=${user.user_id}`);
       
       if (!response.ok) {
         if (response.status === 404) {
@@ -151,7 +152,7 @@ export default function DocumentAnalysisPage() {
     if (!user) return;
 
     try {
-      const response = await authenticatedFetch('http://localhost:8000/api/documents/process', {
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/process`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
+import { config } from '@/utils/config';
 
 // User interface is now imported from @/utils/auth
 
@@ -148,7 +149,7 @@ export default function DigitalTwinPage() {
     setIsLoadingInsights(true);
     try {
       const response = await authenticatedFetch(
-        `http://localhost:8000/api/digital-twin/workflows/${workflowType}/insights?time_window_days=30`,
+        `${config.apiBaseUrl}/api/digital-twin/workflows/${workflowType}/insights?time_window_days=30`,
         {}, 
         60000 // 1 minute timeout for workflow insights
       );
@@ -173,7 +174,7 @@ export default function DigitalTwinPage() {
 
   const loadDocuments = async (userId: string) => {
     try {
-      const response = await authenticatedFetch(`http://localhost:8000/api/documents?user_id=${userId}`);
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents?user_id=${userId}`);
       
       if (response.ok) {
         const data = await response.json();
@@ -198,7 +199,7 @@ export default function DigitalTwinPage() {
 
     setIsRunningSimulation(true);
     try {
-      const response = await authenticatedFetch('http://localhost:8000/api/digital-twin/simulate', {
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/digital-twin/simulate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

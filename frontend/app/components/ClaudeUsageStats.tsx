@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { authenticatedFetch } from '@/utils/auth';
+import { config } from '@/utils/config';
 
 interface LLMUsageStats {
   summary: {
@@ -50,7 +51,7 @@ export default function ClaudeUsageStats({ userId }: ClaudeUsageStatsProps) {
     try {
       setLoading(true);
       const url = userId ? `/api/providers/usage?user_id=${userId}` : '/api/providers/usage';
-      const response = await authenticatedFetch(`http://localhost:8000${url}`);
+      const response = await authenticatedFetch(`${config.apiBaseUrl}${url}`);
       
       if (response.ok) {
         const data = await response.json();
