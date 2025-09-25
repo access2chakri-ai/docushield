@@ -18,10 +18,15 @@ class ClusterType(Enum):
     SANDBOX = "sandbox"
     ANALYTICS = "analytics"
 
-# Create SSL context for TiDB Cloud
+# Create SSL context for TiDB Cloud - use more compatible settings
 ssl_context = ssl.create_default_context()
 ssl_context.check_hostname = False
 ssl_context.verify_mode = ssl.CERT_NONE
+ssl_context.set_ciphers('DEFAULT@SECLEVEL=1')
+ssl_context.options |= ssl.OP_NO_SSLv2
+ssl_context.options |= ssl.OP_NO_SSLv3
+ssl_context.options |= ssl.OP_NO_TLSv1
+ssl_context.options |= ssl.OP_NO_TLSv1_1
 
 # Multi-cluster engine configuration
 engines = {}
@@ -38,16 +43,47 @@ def create_cluster_engine(cluster_type: ClusterType):
     else:
         raise ValueError(f"Unknown cluster type: {cluster_type}")
     
-    engine = create_async_engine(
-        db_url.replace("mysql+pymysql://", "mysql+aiomysql://"),
-        echo=settings.debug,
-        pool_pre_ping=True,
-        pool_recycle=300,
-        # SSL configuration for TiDB Cloud (aiomysql parameters)
-        connect_args={
-            "ssl": ssl_context
-        }
-    )
+    # Try different SSL configurations for TiDB Cloud compatibility
+    ssl_configs = [
+        # Config 1: Current SSL context
+        {"ssl": ssl_context},
+        # Config 2: Simple SSL without context
+        {"ssl": True},
+        # Config 3: No SSL (fallback)
+        {"ssl": False}
+    ]
+    
+    engine = None
+    last_error = None
+    
+    for i, ssl_config in enumerate(ssl_configs):
+        try:
+            logger.info(f"Trying SSL configuration {i+1} for {cluster_type.value} cluster")
+            engine = create_async_engine(
+                db_url.replace("mysql+pymysql://", "mysql+aiomysql://"),
+                echo=settings.debug,
+                pool_pre_ping=True,
+                pool_recycle=300,
+                pool_size=5,
+                max_overflow=10,
+                # SSL configuration for TiDB Cloud (aiomysql parameters)
+                connect_args={
+                    **ssl_config,
+                    "connect_timeout": 30,
+                    "autocommit": True,
+                    "charset": "utf8mb4",
+                    "use_unicode": True
+                }
+            )
+            logger.info(f"Successfully created engine with SSL config {i+1}")
+            break
+        except Exception as e:
+            last_error = e
+            logger.warning(f"SSL configuration {i+1} failed: {e}")
+            continue
+    
+    if engine is None:
+        raise Exception(f"Failed to create engine for {cluster_type.value} cluster with any SSL configuration. Last error: {last_error}")
     
     engines[cluster_type] = engine
     session_makers[cluster_type] = sessionmaker(
