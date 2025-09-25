@@ -16,3 +16,55 @@ run:
   env:
     - name: PORT
       value: "8000"
+      
+  secrets:
+    - name: TIDB_OPERATIONAL_HOST
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: TIDB_OPERATIONAL_PORT
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: TIDB_OPERATIONAL_USER
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: TIDB_OPERATIONAL_PASSWORD
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: TIDB_OPERATIONAL_DATABASE
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+
+    # If you insist on access keys (prefer instance role instead)
+    - name: AWS_ACCESS_KEY_ID
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: AWS_SECRET_ACCESS_KEY
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: AWS_DEFAULT_REGION
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+
+
+    # App settings
+    - name: DEBUG
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: DEFAULT_LLM_PROVIDER
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: DEFAULT_EMBEDDING_PROVIDER
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: ENVIRONMENT
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+
+    - name: RISK_THRESHOLD_HIGH
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: RISK_THRESHOLD_MEDIUM
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+
+    - name: MAX_FILE_SIZE_MB
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: MAX_RETRY_ATTEMPTS
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: RETRY_COOLDOWN_MINUTES
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+
+    - name: ENABLE_REAL_TIME_MONITORING
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: MONITORING_INTERVAL_MINUTES
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: ACCESS_TOKEN_EXPIRE_MINUTES
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
+    - name: REFRESH_TOKEN_EXPIRE_DAYS
+      value-from: arn:aws:secretsmanager:us-east-1:192933326034:secret:docushield-backend-env-YwuKYB
