@@ -1,5 +1,6 @@
 """
 Enhanced configuration for DocuShield Digital Twin Document Intelligence
+Supports both .env files (local development) and AWS environment variables (production)
 """
 import os
 from typing import Optional
@@ -114,7 +115,52 @@ class Settings(BaseSettings):
     environment: str = os.getenv("ENVIRONMENT", "development")
     
     class Config:
+        # Make .env file optional - works with AWS environment variables
         env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
         extra = "allow"  # Allow extra environment variables
+        
+        # Handle missing .env file gracefully
+        @classmethod
+        def customise_sources(
+            cls,
+            init_settings,
+            env_settings,
+            file_secret_settings,
+        ):
+            # Only add .env file source if it exists
+            import os
+            if os.path.exists(".env"):
+                return (
+                    init_settings,
+                    env_settings,
+                    file_secret_settings,
+                )
+            else:
+                # Skip .env file if it doesn't exist (AWS deployment)
+                return (
+                    init_settings,
+                    env_settings,
+                )
+
+    def validate_configuration(self) -> dict:
+        """Validate and return configuration status for debugging"""
+        config_status = {
+            "environment": self.environment,
+            "debug_mode": self.debug,
+            "database_configured": bool(self.tidb_operational_host != "localhost" or self.tidb_operational_password),
+            "aws_configured": bool(self.aws_access_key_id or self.aws_default_region),
+            "llm_providers": {
+                "openai": bool(self.openai_api_key),
+                "anthropic": bool(self.anthropic_api_key),
+                "gemini": bool(self.gemini_api_key),
+                "groq": bool(self.groq_api_key),
+                "bedrock": bool(self.aws_access_key_id or self.aws_default_region),
+            },
+            "default_llm_provider": self.default_llm_provider,
+            "default_embedding_provider": self.default_embedding_provider,
+        }
+        return config_status
 
 settings = Settings()

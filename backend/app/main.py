@@ -13,6 +13,14 @@ setup_logging()  # Will use environment variable
 from app.database import init_db
 from app.core.config import settings
 
+# Log configuration source for debugging
+import os
+logger = get_clean_logger(__name__)
+if os.path.exists(".env"):
+    logger.info("🔧 Configuration: Using .env file + environment variables")
+else:
+    logger.info("🔧 Configuration: Using AWS environment variables only")
+
 # Routers
 from app.routers import auth, documents, search, health, chat, analytics, llm, integrations, digital_twin, monitoring, providers, profile
 
@@ -79,6 +87,14 @@ app.include_router(profile.router)
 async def startup():
     """Initialize services and test connections"""
     logger.info("🚀 Starting DocuShield Digital Twin Document Intelligence")
+    
+    # Log configuration status
+    config_status = settings.validate_configuration()
+    logger.info(f"🔧 Environment: {config_status['environment']}")
+    logger.info(f"🔧 Debug mode: {config_status['debug_mode']}")
+    logger.info(f"🔧 Database configured: {config_status['database_configured']}")
+    logger.info(f"🔧 AWS configured: {config_status['aws_configured']}")
+    logger.info(f"🔧 Default LLM provider: {config_status['default_llm_provider']}")
     
     # Initialize database tables first (creates tables if they don't exist)
     try:
