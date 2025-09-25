@@ -36,7 +36,7 @@ export default function LoadingSpinner({
         {showTimeoutWarning && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mt-4 max-w-md">
             <p className="text-sm text-yellow-700">
-              ⚠️ This is taking longer than expected. Please check if the backend server is running on http://localhost:8000
+              ⚠️ This is taking longer than expected. Please check if the backend server is running
             </p>
           </div>
         )}

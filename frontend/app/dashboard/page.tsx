@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ClaudeUsageStats from '../components/ClaudeUsageStats';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
+import { config } from '@/utils/config';
 
 interface ContractAnalysis {
   contract: {
@@ -91,7 +92,7 @@ export default function RiskDashboard() {
   const fetchDashboardData = async () => {
     try {
       setError(null);
-      const response = await authenticatedFetch('http://localhost:8000/api/analytics/dashboard');
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/analytics/dashboard`);
       if (response.ok) {
         const data = await response.json();
         setDashboardData(data);
@@ -111,7 +112,7 @@ export default function RiskDashboard() {
     try {
       setError(null);
       // Get real contract analysis data from TiDB
-      const response = await authenticatedFetch('http://localhost:8000/api/analytics/contracts/risk-analysis');
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/analytics/contracts/risk-analysis`);
       
       if (response.ok) {
         const data = await response.json();
@@ -121,7 +122,7 @@ export default function RiskDashboard() {
           data.contracts.slice(0, 5).map(async (contract: any) => {
             // For each contract, fetch detailed analysis if available
             try {
-              const analysisResponse = await authenticatedFetch(`http://localhost:8000/api/documents/${contract.contract_id}/analysis`);
+              const analysisResponse = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/${contract.contract_id}/analysis`);
               
               if (analysisResponse.ok) {
                 const analysisData = await analysisResponse.json();

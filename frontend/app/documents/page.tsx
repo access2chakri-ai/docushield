@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getUserData, isAuthenticated, logout, authenticatedFetch, type User } from '@/utils/auth';
+import { config } from '@/utils/config';
 import LoadingSpinner from '@/app/components/LoadingSpinner';
 
 // User interface is now imported from @/utils/auth
@@ -56,7 +57,7 @@ export default function DocumentsPage() {
       setLoading(true);
       setError(null);
       
-      const response = await authenticatedFetch(`http://localhost:8000/api/documents?limit=50`);
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents?limit=50`);
       
       if (!response.ok) {
         if (response.status === 401) {
@@ -73,9 +74,9 @@ export default function DocumentsPage() {
       console.error('Error fetching documents:', err);
       if (err instanceof Error) {
         if (err.name === 'AbortError') {
-          setError('Request timed out. Please check if the backend is running on http://localhost:8000');
+          setError('Request timed out. Please check if the backend is running');
         } else if (err.message.includes('fetch') || err.message.includes('NetworkError')) {
-          setError('Cannot connect to server. Please ensure the backend is running on http://localhost:8000');
+          setError('Cannot connect to server. Please ensure the backend is running');
         } else {
           setError(err.message);
         }
@@ -143,7 +144,7 @@ export default function DocumentsPage() {
     if (!user) return;
 
     try {
-      const response = await authenticatedFetch('http://localhost:8000/api/documents/process', {
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/process`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -177,7 +178,7 @@ export default function DocumentsPage() {
     }
 
     try {
-      const response = await authenticatedFetch(`http://localhost:8000/api/documents/${document.contract_id}/force-stop`, {
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/${document.contract_id}/force-stop`, {
         method: 'POST'
       });
 
@@ -211,8 +212,8 @@ export default function DocumentsPage() {
 
     try {
       const url = isProcessing && !force 
-        ? `http://localhost:8000/api/documents/${document.contract_id}?force=true`
-        : `http://localhost:8000/api/documents/${document.contract_id}`;
+        ? `${config.apiBaseUrl}/api/documents/${document.contract_id}?force=true`
+        : `${config.apiBaseUrl}/api/documents/${document.contract_id}`;
         
       const response = await authenticatedFetch(url, {
         method: 'DELETE'
@@ -238,7 +239,7 @@ export default function DocumentsPage() {
         message="Loading your documents..." 
         timeout={8000}
         onTimeout={() => {
-          setError('Loading timed out. Please check if the backend server is running on http://localhost:8000');
+          setError('Loading timed out. Please check if the backend server is running');
           setLoading(false);
         }}
       />
