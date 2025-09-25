@@ -5,9 +5,9 @@ Clean, structured implementation with separated routers and schemas
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Setup clean logging first
+# Setup environment-aware logging first
 from app.core.logging_config import setup_logging, get_clean_logger
-setup_logging(log_level="INFO")
+setup_logging()  # Will use environment variable
 
 # Database and migrations
 from app.database import init_db
@@ -80,23 +80,23 @@ async def startup():
     """Initialize services and test connections"""
     logger.info("🚀 Starting DocuShield Digital Twin Document Intelligence")
     
-    # Auto-run database migrations on startup
-    try:
-        migration_runner = MigrationRunner()
-        
-        logger.info("🔄 Checking for database migrations...")
-        await migration_runner.migrate()
-        logger.info("✅ Database migrations completed")
-    except Exception as e:
-        logger.error(f"❌ Database migration failed: {e}")
-        # Don't fail startup if migrations fail - log and continue
-    
-    # Initialize database tables (creates tables if they don't exist)
+    # Initialize database tables first (creates tables if they don't exist)
     try:
         await init_db()
         logger.info("✅ Database tables verified")
     except Exception as e:
         logger.error(f"❌ Database initialization failed: {e}")
+        raise  # Fail startup if database init fails
+    
+    # Auto-run database migrations after tables are created
+    try:
+        migration_runner = MigrationRunner()
+        logger.info("🔄 Running database migrations...")
+        await migration_runner.migrate()
+        logger.info("✅ Database migrations completed")
+    except Exception as e:
+        logger.error(f"❌ Database migration failed: {e}")
+        # Don't fail startup if migrations fail - log and continue
     
     # Log clean startup message
     log_startup_complete()

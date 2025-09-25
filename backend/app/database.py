@@ -56,20 +56,19 @@ def create_cluster_engine(cluster_type: ClusterType):
     
     return engine
 
-# Initialize all cluster engines
+# Initialize cluster engines (operational only)
 operational_engine = create_cluster_engine(ClusterType.OPERATIONAL)
-sandbox_engine = create_cluster_engine(ClusterType.SANDBOX)
-analytics_engine = create_cluster_engine(ClusterType.ANALYTICS)
+sandbox_engine = None
+analytics_engine = None
 
 
 
 async def init_db():
-    """Initialize database tables on all clusters"""
+    """Initialize database tables on operational cluster only"""
     try:
-        for cluster_type, engine in engines.items():
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            logger.info(f"Database initialized successfully for {cluster_type.value} cluster")
+        async with operational_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("✅ Database initialized successfully for operational cluster")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise

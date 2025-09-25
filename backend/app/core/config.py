@@ -47,7 +47,7 @@ class Settings(BaseSettings):
             return f"mysql+pymysql://{self.tidb_analytics_user}:{self.tidb_analytics_password}@{self.tidb_analytics_host}:{self.tidb_analytics_port}/{self.tidb_analytics_database}"
         return f"mysql+pymysql://{self.tidb_analytics_user}@{self.tidb_analytics_host}:{self.tidb_analytics_port}/{self.tidb_analytics_database}"
     
-    # LLM Factory - Multi-provider API keys
+    # LLM Factory - Multi-provider API keys (all optional)
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
@@ -68,12 +68,12 @@ class Settings(BaseSettings):
     llm_fallback_enabled: bool = os.getenv("LLM_FALLBACK_ENABLED", "true").lower() == "true"
     llm_load_balancing: bool = os.getenv("LLM_LOAD_BALANCING", "false").lower() == "true"
     
-    # Google Drive Integration
+    # Google Drive Integration (optional)
     google_credentials_path: str = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
     google_token_path: str = os.getenv("GOOGLE_TOKEN_PATH", "token.json")
     google_drive_folder_id: Optional[str] = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
     
-    # External Integrations
+    # External Integrations (optional)
     slack_bot_token: str = os.getenv("SLACK_BOT_TOKEN", "")
     slack_webhook_url: str = os.getenv("SLACK_WEBHOOK_URL", "")
     sendgrid_api_key: str = os.getenv("SENDGRID_API_KEY", "")
