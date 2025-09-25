@@ -3,10 +3,10 @@ runtime: python311
 build:
   commands:
     build:
-      # This command will install dependencies directly into the /app folder
-      - pip3 install --no-cache-dir --target=/app -r requirements.txt
+      - python3 -m venv /app/.venv
+      - /app/.venv/bin/pip install --no-cache-dir -r requirements.txt
 run:
-  # This command runs from inside the 'backend' directory
-  command: python3 main.py
+  workdir: /app/backend/app
+  command: /app/.venv/bin/python main.py
   network:
     port: 8000
