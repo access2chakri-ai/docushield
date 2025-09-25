@@ -1,8 +1,11 @@
 version: 1.0
 runtime: python311
+
+build:
+  commands:
+    - pip3 install --no-cache-dir --target=/app -r requirements.txt
+
 run:
-  pre-run:
-    - pip3 install -r requirements.txt
-  command: python3 backend/main.py # <-- Path points to main.py
+  command: python3 main.py
   network:
     port: 8000
