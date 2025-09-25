@@ -1,18 +1,27 @@
 """
 Logging configuration for DocuShield
-Clean, minimal logging with proper levels
+Environment-aware logging with proper levels
 """
 import logging
 import sys
+import os
 from typing import Dict, Any
 
-def setup_logging(log_level: str = "INFO") -> None:
+def setup_logging(log_level: str = None) -> None:
     """
-    Setup clean logging configuration
-    - Application logs: INFO and above
+    Setup environment-aware logging configuration
+    - Production: ERROR and above only
+    - Development: INFO and above
     - SQLAlchemy logs: WARNING and above (no SQL queries)
-    - Migration logs: INFO and above (but clean)
     """
+    
+    # Determine log level based on environment
+    if log_level is None:
+        environment = os.getenv("ENVIRONMENT", "development").lower()
+        if environment == "production":
+            log_level = "ERROR"
+        else:
+            log_level = "INFO"
     
     # Root logger configuration
     logging.basicConfig(
@@ -31,10 +40,11 @@ def setup_logging(log_level: str = "INFO") -> None:
     # Keep important SQLAlchemy logs
     logging.getLogger('sqlalchemy').setLevel(logging.WARNING)
     
-    # Application loggers - keep at INFO
-    logging.getLogger('app').setLevel(logging.INFO)
-    logging.getLogger('migrations').setLevel(logging.INFO)
-    logging.getLogger('agent').setLevel(logging.INFO)
+    # Application loggers - environment aware
+    app_level = logging.ERROR if os.getenv("ENVIRONMENT", "development").lower() == "production" else logging.INFO
+    logging.getLogger('app').setLevel(app_level)
+    logging.getLogger('migrations').setLevel(app_level)
+    logging.getLogger('agent').setLevel(app_level)
     
     # Uvicorn logs - reduce noise
     logging.getLogger('uvicorn.access').setLevel(logging.WARNING)

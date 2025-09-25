@@ -20,7 +20,7 @@ from app.models import (
     SilverClauseSpan, Alert
 )
 from app.core.config import settings
-import openai
+from app.services.llm_factory import llm_factory, LLMTask
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,8 @@ class DigitalTwinService:
     """
     
     def __init__(self):
-        self.openai_client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+        # Use LLM factory instead of direct OpenAI client
+        self.llm_factory = llm_factory
         
         # Pre-defined workflow templates
         self.workflow_templates = {
@@ -158,7 +159,7 @@ class DigitalTwinService:
                     mapping = await self._create_workflow_mapping(contract, workflow_type)
                     mappings.append(mapping)
                 
-                logger.info(f"Mapped contract {contract_id} to {len(mappings)} workflows")
+                logger.debug(f"Mapped contract {contract_id} to {len(mappings)} workflows")
                 return mappings
                 
         except Exception as e:
@@ -357,7 +358,7 @@ class DigitalTwinService:
         """Prepare sandbox environment with relevant data"""
         # This would copy relevant data from operational to sandbox cluster
         # For now, we'll simulate this step
-        logger.info(f"Prepared sandbox data for {len(document_ids)} documents")
+        logger.debug(f"Prepared sandbox data for {len(document_ids)} documents")
     
     async def _analyze_affected_documents(self, document_ids: List[str]) -> List[Dict[str, Any]]:
         """Analyze affected documents to understand their risk profiles"""
@@ -591,14 +592,15 @@ class DigitalTwinService:
             4. Uses plain business language (avoid technical jargon)
             """
             
-            result = await self.openai_client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": narrative_prompt}],
+            # Use LLM factory instead of direct OpenAI client
+            result = await self.llm_factory.generate_completion(
+                prompt=narrative_prompt,
+                task_type=LLMTask.ANALYSIS,
                 max_tokens=300,
                 temperature=0.3
             )
             
-            return result.choices[0].message.content
+            return result["content"]
             
         except Exception as e:
             logger.warning(f"Failed to generate impact narrative: {e}")
@@ -609,7 +611,7 @@ class DigitalTwinService:
         async for analytics_db in get_analytics_db():
             # Store results in analytics tables
             # This would involve creating analytics-specific tables
-            logger.info(f"Stored simulation results for scenario {scenario.scenario_id}")
+            logger.debug(f"Stored simulation results for scenario {scenario.scenario_id}")
     
     async def _analyze_workflow_metrics(self, workflow_type: WorkflowType, days: int, analytics_db: AsyncSession) -> Dict[str, Any]:
         """Analyze workflow performance metrics"""
