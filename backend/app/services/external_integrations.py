@@ -9,10 +9,28 @@ from datetime import datetime
 import asyncio
 
 import httpx
-from slack_sdk.web.async_client import AsyncWebClient
-from slack_sdk.errors import SlackApiError
-import sendgrid
-from sendgrid.helpers.mail import Mail, Email, To, Content
+
+# Optional dependencies - handle gracefully if not installed
+try:
+    from slack_sdk.web.async_client import AsyncWebClient
+    from slack_sdk.errors import SlackApiError
+    SLACK_AVAILABLE = True
+except ImportError:
+    SLACK_AVAILABLE = False
+    AsyncWebClient = None
+    SlackApiError = Exception
+
+try:
+    import sendgrid
+    from sendgrid.helpers.mail import Mail, Email, To, Content
+    SENDGRID_AVAILABLE = True
+except ImportError:
+    SENDGRID_AVAILABLE = False
+    sendgrid = None
+    Mail = None
+    Email = None
+    To = None
+    Content = None
 
 from app.core.config import settings
 from app.services.risk_analyzer import RiskLevel
@@ -29,12 +47,24 @@ class ExternalIntegrationsService:
         self.sendgrid_client = None
         self.http_client = httpx.AsyncClient()
         
-        # Initialize clients if credentials are available
-        if settings.slack_bot_token:
-            self.slack_client = AsyncWebClient(token=settings.slack_bot_token)
+        # Initialize clients if credentials are available and dependencies are installed
+        if settings.slack_bot_token and SLACK_AVAILABLE:
+            try:
+                self.slack_client = AsyncWebClient(token=settings.slack_bot_token)
+                logger.info("✅ Slack client initialized")
+            except Exception as e:
+                logger.warning(f"❌ Failed to initialize Slack client: {e}")
+        elif settings.slack_bot_token and not SLACK_AVAILABLE:
+            logger.warning("⚠️ Slack token provided but slack-sdk not installed. Install with: pip install slack-sdk")
         
-        if settings.sendgrid_api_key:
-            self.sendgrid_client = sendgrid.SendGridAPIClient(api_key=settings.sendgrid_api_key)
+        if settings.sendgrid_api_key and SENDGRID_AVAILABLE:
+            try:
+                self.sendgrid_client = sendgrid.SendGridAPIClient(api_key=settings.sendgrid_api_key)
+                logger.info("✅ SendGrid client initialized")
+            except Exception as e:
+                logger.warning(f"❌ Failed to initialize SendGrid client: {e}")
+        elif settings.sendgrid_api_key and not SENDGRID_AVAILABLE:
+            logger.warning("⚠️ SendGrid API key provided but sendgrid not installed. Install with: pip install sendgrid")
     
     async def send_risk_alert(self, document_title: str, risk_analysis: Dict[str, Any], document_id: str) -> Dict[str, bool]:
         """
@@ -80,7 +110,8 @@ class ExternalIntegrationsService:
     async def _send_slack_alert(self, document_title: str, risk_analysis: Dict[str, Any], document_id: str) -> bool:
         """Send Slack alert for document risks"""
         try:
-            if not self.slack_client:
+            if not self.slack_client or not SLACK_AVAILABLE:
+                logger.warning("Slack client not available - install slack-sdk to enable Slack alerts")
                 return False
             
             risk_level = risk_analysis.get("overall_risk_level", "medium")
@@ -208,7 +239,9 @@ class ExternalIntegrationsService:
     async def _send_email_alert(self, document_title: str, risk_analysis: Dict[str, Any], document_id: str) -> bool:
         """Send email alert for high-risk documents"""
         try:
-            if not self.sendgrid_client or not settings.alert_email_to:
+            if not self.sendgrid_client or not SENDGRID_AVAILABLE or not settings.alert_email_to:
+                if not SENDGRID_AVAILABLE:
+                    logger.warning("SendGrid not available - install sendgrid to enable email alerts")
                 return False
             
             risk_level = risk_analysis.get("overall_risk_level", "medium")
@@ -442,20 +475,26 @@ class ExternalIntegrationsService:
         
         try:
             # Test Slack
-            if self.slack_client:
+            if self.slack_client and SLACK_AVAILABLE:
                 try:
                     response = await self.slack_client.auth_test()
                     results["slack"] = response["ok"]
                 except SlackApiError:
                     results["slack"] = False
+            elif not SLACK_AVAILABLE:
+                logger.warning("Slack SDK not available - install slack-sdk to test Slack integration")
+                results["slack"] = False
             
             # Test email (SendGrid)
-            if self.sendgrid_client:
+            if self.sendgrid_client and SENDGRID_AVAILABLE:
                 try:
                     # This is a simple API key validation
                     results["email"] = True  # SendGrid doesn't have a simple test endpoint
                 except Exception:
                     results["email"] = False
+            elif not SENDGRID_AVAILABLE:
+                logger.warning("SendGrid not available - install sendgrid to test email integration")
+                results["email"] = False
             
             # Test webhook
             if settings.slack_webhook_url:

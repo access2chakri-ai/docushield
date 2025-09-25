@@ -9,12 +9,23 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import asyncio
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 import httpx
+
+# Optional Google dependencies - handle gracefully if not installed
+try:
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    GOOGLE_DRIVE_AVAILABLE = True
+except ImportError:
+    GOOGLE_DRIVE_AVAILABLE = False
+    Request = None
+    Credentials = None
+    InstalledAppFlow = None
+    build = None
+    HttpError = Exception
 
 from app.core.config import settings
 from app.agents import agent_orchestrator
@@ -34,8 +45,15 @@ class GoogleDriveService:
         self.credentials = None
         self.last_sync = None
         
+        if not GOOGLE_DRIVE_AVAILABLE:
+            logger.warning("⚠️ Google Drive dependencies not available. Install with: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client")
+        
     async def authenticate(self) -> bool:
         """Authenticate with Google Drive API"""
+        if not GOOGLE_DRIVE_AVAILABLE:
+            logger.error("Google Drive dependencies not available - install required packages")
+            return False
+            
         try:
             creds = None
             
@@ -74,6 +92,10 @@ class GoogleDriveService:
         """
         List documents from Google Drive folder
         """
+        if not GOOGLE_DRIVE_AVAILABLE:
+            logger.error("Google Drive dependencies not available - install required packages")
+            return []
+            
         try:
             if not self.service:
                 if not await self.authenticate():
@@ -129,6 +151,10 @@ class GoogleDriveService:
     
     async def download_document(self, file_id: str) -> Optional[bytes]:
         """Download document content from Google Drive"""
+        if not GOOGLE_DRIVE_AVAILABLE:
+            logger.error("Google Drive dependencies not available - install required packages")
+            return None
+            
         try:
             if not self.service:
                 if not await self.authenticate():
@@ -163,6 +189,17 @@ class GoogleDriveService:
         """
         Sync documents from Google Drive to DocuShield
         """
+        if not GOOGLE_DRIVE_AVAILABLE:
+            logger.error("Google Drive dependencies not available - install required packages")
+            return {
+                "total_found": 0,
+                "processed": 0,
+                "skipped": 0,
+                "errors": 1,
+                "new_documents": [],
+                "error_details": ["Google Drive dependencies not available"]
+            }
+            
         try:
             sync_start = datetime.utcnow()
             
@@ -344,6 +381,10 @@ class GoogleDriveService:
         Set up Google Drive webhook for real-time updates
         Note: This requires a publicly accessible webhook endpoint
         """
+        if not GOOGLE_DRIVE_AVAILABLE:
+            logger.error("Google Drive dependencies not available - install required packages")
+            return None
+            
         try:
             if not self.service:
                 if not await self.authenticate():

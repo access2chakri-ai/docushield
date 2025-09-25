@@ -28,13 +28,43 @@ except ImportError:
 except Exception as e:
     print(f"⚠️ LLM Factory: Could not load .env file: {e}")
 
-# Multi-provider imports
-import openai
-import anthropic
-from google import genai
-from google.genai import types
-from groq import Groq
-import boto3
+# Multi-provider imports - handle gracefully if not installed
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    openai = None
+
+try:
+    import anthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    anthropic = None
+
+try:
+    from google import genai
+    from google.genai import types
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    genai = None
+    types = None
+
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+    Groq = None
+
+try:
+    import boto3
+    BEDROCK_AVAILABLE = True
+except ImportError:
+    BEDROCK_AVAILABLE = False
+    boto3 = None
 
 from app.core.config import settings
 from app.models import LlmCall
@@ -122,7 +152,7 @@ class LLMFactory:
         """Initialize all available LLM providers"""
         
         # OpenAI
-        if settings.openai_api_key:
+        if settings.openai_api_key and OPENAI_AVAILABLE:
             try:
                 self.providers[LLMProvider.OPENAI] = openai.AsyncOpenAI(api_key=settings.openai_api_key)
                 self.provider_status[LLMProvider.OPENAI] = True
@@ -130,9 +160,14 @@ class LLMFactory:
             except Exception as e:
                 logger.warning(f"❌ OpenAI initialization failed: {e}")
                 self.provider_status[LLMProvider.OPENAI] = False
+        elif settings.openai_api_key and not OPENAI_AVAILABLE:
+            logger.warning("⚠️ OpenAI API key provided but openai package not installed. Install with: pip install openai")
+            self.provider_status[LLMProvider.OPENAI] = False
+        else:
+            self.provider_status[LLMProvider.OPENAI] = False
         
         # Anthropic
-        if settings.anthropic_api_key:
+        if settings.anthropic_api_key and ANTHROPIC_AVAILABLE:
             try:
                 self.providers[LLMProvider.ANTHROPIC] = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
                 self.provider_status[LLMProvider.ANTHROPIC] = True
@@ -140,9 +175,14 @@ class LLMFactory:
             except Exception as e:
                 logger.warning(f"❌ Anthropic initialization failed: {e}")
                 self.provider_status[LLMProvider.ANTHROPIC] = False
+        elif settings.anthropic_api_key and not ANTHROPIC_AVAILABLE:
+            logger.warning("⚠️ Anthropic API key provided but anthropic package not installed. Install with: pip install anthropic")
+            self.provider_status[LLMProvider.ANTHROPIC] = False
+        else:
+            self.provider_status[LLMProvider.ANTHROPIC] = False
         
         # Google Gemini
-        if settings.gemini_api_key:
+        if settings.gemini_api_key and GEMINI_AVAILABLE:
             try:
                 genai.configure(api_key=settings.gemini_api_key)
                 self.providers[LLMProvider.GEMINI] = genai
@@ -151,9 +191,14 @@ class LLMFactory:
             except Exception as e:
                 logger.warning(f"❌ Gemini initialization failed: {e}")
                 self.provider_status[LLMProvider.GEMINI] = False
+        elif settings.gemini_api_key and not GEMINI_AVAILABLE:
+            logger.warning("⚠️ Gemini API key provided but google-generativeai package not installed. Install with: pip install google-generativeai")
+            self.provider_status[LLMProvider.GEMINI] = False
+        else:
+            self.provider_status[LLMProvider.GEMINI] = False
         
         # Groq
-        if settings.groq_api_key:
+        if settings.groq_api_key and GROQ_AVAILABLE:
             try:
                 self.providers[LLMProvider.GROQ] = Groq(api_key=settings.groq_api_key)
                 self.provider_status[LLMProvider.GROQ] = True
@@ -161,42 +206,51 @@ class LLMFactory:
             except Exception as e:
                 logger.warning(f"❌ Groq initialization failed: {e}")
                 self.provider_status[LLMProvider.GROQ] = False
+        elif settings.groq_api_key and not GROQ_AVAILABLE:
+            logger.warning("⚠️ Groq API key provided but groq package not installed. Install with: pip install groq")
+            self.provider_status[LLMProvider.GROQ] = False
+        else:
+            self.provider_status[LLMProvider.GROQ] = False
         
         # Amazon Bedrock
-        try:
-            logger.info("🔧 Initializing Amazon Bedrock...")
-            
-            # Check if AWS credentials are available (via env vars, IAM role, or config file)
-            # AWS credentials can be set via:
-            # 1. Environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
-            # 2. AWS credentials file (~/.aws/credentials)
-            # 3. IAM role (if running on EC2)
-            # 4. AWS SSO
-            
-            # Create Bedrock Runtime client - boto3 will automatically find credentials
-            self.providers[LLMProvider.BEDROCK] = boto3.client(
-                service_name="bedrock-runtime",
-                region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")  # Use configured region or default
-            )
-            
-            # Test the connection by creating a separate bedrock client for model listing
+        if BEDROCK_AVAILABLE:
             try:
-                # Use bedrock (not bedrock-runtime) client for listing models
-                bedrock_client = boto3.client(
-                    service_name="bedrock",
-                    region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-                )
-                response = bedrock_client.list_foundation_models()
-                self.provider_status[LLMProvider.BEDROCK] = True
-                logger.info("✅ Amazon Bedrock provider initialized successfully")
-            except Exception as test_e:
-                logger.warning(f"⚠️ Amazon Bedrock credentials test failed: {test_e}")
-                self.provider_status[LLMProvider.BEDROCK] = False
+                logger.info("🔧 Initializing Amazon Bedrock...")
                 
-        except Exception as e:
-            logger.error(f"❌ Amazon Bedrock initialization failed: {e}")
-            import traceback
-            logger.error(f"Full error trace: {traceback.format_exc()}")
+                # Check if AWS credentials are available (via env vars, IAM role, or config file)
+                # AWS credentials can be set via:
+                # 1. Environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+                # 2. AWS credentials file (~/.aws/credentials)
+                # 3. IAM role (if running on EC2)
+                # 4. AWS SSO
+                
+                # Create Bedrock Runtime client - boto3 will automatically find credentials
+                self.providers[LLMProvider.BEDROCK] = boto3.client(
+                    service_name="bedrock-runtime",
+                    region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")  # Use configured region or default
+                )
+                
+                # Test the connection by creating a separate bedrock client for model listing
+                try:
+                    # Use bedrock (not bedrock-runtime) client for listing models
+                    bedrock_client = boto3.client(
+                        service_name="bedrock",
+                        region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+                    )
+                    response = bedrock_client.list_foundation_models()
+                    self.provider_status[LLMProvider.BEDROCK] = True
+                    logger.info("✅ Amazon Bedrock provider initialized successfully")
+                except Exception as test_e:
+                    logger.warning(f"⚠️ Amazon Bedrock credentials test failed: {test_e}")
+                    self.provider_status[LLMProvider.BEDROCK] = False
+                    
+            except Exception as e:
+                logger.error(f"❌ Amazon Bedrock initialization failed: {e}")
+                import traceback
+                logger.error(f"Full error trace: {traceback.format_exc()}")
+                self.provider_status[LLMProvider.BEDROCK] = False
+        else:
+            logger.warning("⚠️ boto3 not available - Amazon Bedrock will not be initialized. Install with: pip install boto3")
             self.provider_status[LLMProvider.BEDROCK] = False
 
         
@@ -511,6 +565,9 @@ class LLMFactory:
     
     async def _openai_completion(self, prompt: str, model: str, max_tokens: int, temperature: float, **kwargs) -> Dict[str, Any]:
         """OpenAI completion"""
+        if not OPENAI_AVAILABLE:
+            raise Exception("OpenAI package not available - install with: pip install openai")
+        
         client = self.providers[LLMProvider.OPENAI]
         
         response = await client.chat.completions.create(
@@ -536,6 +593,9 @@ class LLMFactory:
     
     async def _anthropic_completion(self, prompt: str, model: str, max_tokens: int, temperature: float, **kwargs) -> Dict[str, Any]:
         """Anthropic completion"""
+        if not ANTHROPIC_AVAILABLE:
+            raise Exception("Anthropic package not available - install with: pip install anthropic")
+        
         client = self.providers[LLMProvider.ANTHROPIC]
         
         response = await client.messages.create(
@@ -561,6 +621,9 @@ class LLMFactory:
     
     async def _gemini_completion(self, prompt: str, model: str, max_tokens: int, temperature: float, **kwargs) -> Dict[str, Any]:
         """Google Gemini completion"""
+        if not GEMINI_AVAILABLE:
+            raise Exception("Google Generative AI package not available - install with: pip install google-generativeai")
+        
         genai_client = self.providers[LLMProvider.GEMINI]
         
         model_instance = genai_client.GenerativeModel(model)
@@ -587,6 +650,9 @@ class LLMFactory:
     
     async def _groq_completion(self, prompt: str, model: str, max_tokens: int, temperature: float, **kwargs) -> Dict[str, Any]:
         """Groq completion"""
+        if not GROQ_AVAILABLE:
+            raise Exception("Groq package not available - install with: pip install groq")
+        
         client = self.providers[LLMProvider.GROQ]
         
         response = await asyncio.to_thread(
@@ -613,6 +679,9 @@ class LLMFactory:
     
     async def _bedrock_completion(self, prompt: str, model: str, max_tokens: int, temperature: float, **kwargs) -> Dict[str, Any]:
         """Amazon Bedrock completion using Converse API"""
+        if not BEDROCK_AVAILABLE:
+            raise Exception("boto3 package not available - install with: pip install boto3")
+        
         client = self.providers[LLMProvider.BEDROCK]
         
         response = await asyncio.to_thread(
@@ -651,6 +720,9 @@ class LLMFactory:
     
     async def _bedrock_embedding(self, text: str) -> Dict[str, Any]:
         """Amazon Bedrock embedding generation using Titan Embeddings V2"""
+        if not BEDROCK_AVAILABLE:
+            raise Exception("boto3 package not available - install with: pip install boto3")
+        
         client = self.providers[LLMProvider.BEDROCK]
         model = "amazon.titan-embed-text-v2:0"
         
@@ -674,6 +746,9 @@ class LLMFactory:
     
     async def _openai_embedding(self, text: str) -> Dict[str, Any]:
         """OpenAI embedding generation"""
+        if not OPENAI_AVAILABLE:
+            raise Exception("OpenAI package not available - install with: pip install openai")
+        
         client = self.providers[LLMProvider.OPENAI]
         
         response = await client.embeddings.create(
@@ -730,6 +805,9 @@ class LLMFactory:
 
     async def _openai_image_generation(self, prompt: str, model: str, size: str, quality: str, style: str) -> Dict[str, Any]:
         """Generate image using OpenAI DALL-E"""
+        if not OPENAI_AVAILABLE:
+            raise Exception("OpenAI package not available - install with: pip install openai")
+        
         client = self.providers[LLMProvider.OPENAI]
         
         response = await client.images.generate(
@@ -772,6 +850,9 @@ class LLMFactory:
 
     async def _gemini_image_generation(self, prompt: str, model: str, size: str = "1024x1024", quality: str = "standard", style: str = "vivid") -> Dict[str, Any]:
         """Generate image using Gemini 2.5 Flash Image Preview with Vertex AI"""
+        if not GEMINI_AVAILABLE:
+            raise Exception("Google Generative AI package not available - install with: pip install google-generativeai")
+        
         try:
             # Check for GOOGLE_CLOUD_API_KEY for Vertex AI
             api_key = None
