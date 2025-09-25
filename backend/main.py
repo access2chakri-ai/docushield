@@ -2,6 +2,9 @@
 DocuShield - TiDB Hackathon Demo
 Modular multi-step agentic document analysis
 """
+# Import early_config first to fan out DOCUSHIELD_CONFIG_JSON secret
+import early_config  # populates TIDB_OPERATIONAL_HOST/PORT/etc. from the JSON
+
 import uvicorn
 
 if __name__ == "__main__":
