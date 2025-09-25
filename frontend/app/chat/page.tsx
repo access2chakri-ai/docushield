@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
+import { config } from '@/utils/config';
 
 
 interface Message {
@@ -87,7 +88,7 @@ export default function ChatPage() {
 
   const loadUserDocuments = async (userId: string) => {
     try {
-      const response = await authenticatedFetch('http://localhost:8000/api/documents');
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents`);
       
       if (response.ok) {
         const data = await response.json();
@@ -161,7 +162,7 @@ export default function ChatPage() {
 
     try {
       // Use extended timeout for AI chat operations
-      const response = await authenticatedFetch('http://localhost:8000/api/ask', {
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -205,7 +206,7 @@ export default function ChatPage() {
       
       if (error instanceof Error) {
         if (error.message.includes('fetch') || error.message.includes('NetworkError')) {
-          errorMessage = '❌ Cannot connect to backend server. Please ensure it is running on http://localhost:8000';
+          errorMessage = '❌ Cannot connect to backend server. Please ensure it is running';
         } else if (error.message.includes('timeout') || error.message.includes('AbortError')) {
           errorMessage = '❌ Request timed out. The backend may be overloaded or not responding.';
         } else {
