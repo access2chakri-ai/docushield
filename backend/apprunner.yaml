@@ -1,12 +1,18 @@
 version: 1.0
 runtime: python311
+
 build:
   commands:
     build:
-      - python3 -m venv /app/.venv
-      - /app/.venv/bin/pip install --no-cache-dir -r requirements.txt
+      - echo "no-op build"
+
 run:
-  workdir: /app/backend/app
-  command: /app/.venv/bin/python main.py
+  pre-run:
+    - python3 -m venv /app/venv
+    - /app/venv/bin/python -m pip install --no-cache-dir -r /app/backend/requirements.txt
+  command: /app/venv/bin/python /app/backend/app/main.py
   network:
     port: 8000
+  env:
+    - name: PORT
+      value: "8000"
