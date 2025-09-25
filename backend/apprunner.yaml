@@ -10,7 +10,7 @@ run:
   pre-run:
     - python3 -m venv /app/venv
     - /app/venv/bin/python -m pip install --no-cache-dir -r /app/backend/requirements.txt
-  command: /app/venv/bin/python /app/backend/app/main.py
+  command: /app/venv/bin/python /app/backend/main.py
   network:
     port: 8000
   env:
