@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
 import { config } from '@/utils/config';
+import DocumentTypeFilter from '@/app/components/DocumentTypeFilter';
 
 interface SearchResult {
   document_id: string;
@@ -38,6 +39,8 @@ export default function AdvancedSearchPage() {
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState('hybrid');
   const [documentFilter, setDocumentFilter] = useState('all');
+  const [selectedDocumentTypes, setSelectedDocumentTypes] = useState<string[]>([]);
+  const [selectedIndustryTypes, setSelectedIndustryTypes] = useState<string[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searchResponse, setSearchResponse] = useState<SearchResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -86,7 +89,9 @@ export default function AdvancedSearchPage() {
           search_type: searchType,
           document_filter: documentFilter,
           limit: 20,
-          filters: {}
+          filters: {},
+          document_types: selectedDocumentTypes.length > 0 ? selectedDocumentTypes : null,
+          industry_types: selectedIndustryTypes.length > 0 ? selectedIndustryTypes : null
         })
       });
 
@@ -266,7 +271,25 @@ export default function AdvancedSearchPage() {
                 </select>
               </div>
             </div>
+          </div>
+        </div>
 
+        {/* Document Type Filter */}
+        <div className="mb-8">
+          <DocumentTypeFilter
+            selectedDocumentTypes={selectedDocumentTypes}
+            selectedIndustryTypes={selectedIndustryTypes}
+            onDocumentTypesChange={setSelectedDocumentTypes}
+            onIndustryTypesChange={setSelectedIndustryTypes}
+            onClearFilters={() => {
+              setSelectedDocumentTypes([]);
+              setSelectedIndustryTypes([]);
+            }}
+          />
+        </div>
+
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
+          <div className="space-y-4">
             {/* Example Queries */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">

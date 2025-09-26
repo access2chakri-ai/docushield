@@ -51,6 +51,12 @@ class BronzeContract(Base):
     source = Column(String(50), default="upload")  # upload, google_drive, api
     source_metadata = Column(JSON, nullable=True)  # Google Drive ID, etc.
     status = Column(String(50), default="uploaded")  # uploaded, processing, completed, failed
+    
+    # Document classification fields
+    document_type = Column(String(100), nullable=True)  # User-selected document type
+    industry_type = Column(String(100), nullable=True)  # User-selected industry
+    document_category = Column(String(50), nullable=True)  # System-detected category
+    user_description = Column(Text, nullable=True)  # User-provided description
     retry_count = Column(Integer, default=0)  # Track number of retry attempts
     last_retry_at = Column(DateTime, nullable=True)  # Track last retry timestamp
     max_retries = Column(Integer, default=3)  # Maximum allowed retries per document

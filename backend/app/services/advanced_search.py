@@ -38,6 +38,17 @@ class DocumentFilter(Enum):
     POLICIES = "policies"
     HIGH_RISK = "high_risk"
     RECENT = "recent"
+    # New document type filters
+    AGREEMENTS = "agreements"
+    REPORTS = "reports"
+    MANUALS = "manuals"
+    SPECIFICATIONS = "specifications"
+    RESEARCH_PAPERS = "research_papers"
+    PRESENTATIONS = "presentations"
+    LEGAL_DOCUMENTS = "legal_documents"
+    FORMS = "forms"
+    EMAILS = "emails"
+    MEMOS = "memos"
 
 @dataclass
 class SearchQuery:
@@ -49,6 +60,8 @@ class SearchQuery:
     semantic_query: str
     keywords: List[str]
     structured_conditions: Dict[str, Any]
+    document_types: List[str] = None  # Filter by document types
+    industry_types: List[str] = None  # Filter by industry types
 
 @dataclass
 class SearchResult:
@@ -136,7 +149,9 @@ class AdvancedSearchService:
         user_id: str,
         search_type: SearchType = SearchType.HYBRID,
         limit: int = 20,
-        filters: Optional[Dict[str, Any]] = None
+        filters: Optional[Dict[str, Any]] = None,
+        document_types: Optional[List[str]] = None,
+        industry_types: Optional[List[str]] = None
     ) -> SearchResponse:
         """
         Main search interface with intelligent query parsing and hybrid search
@@ -146,6 +161,12 @@ class AdvancedSearchService:
         try:
             # Parse the query to understand intent and extract filters
             parsed_query = await self._parse_query(query, search_type, filters or {})
+            
+            # Add document type and industry filters
+            if document_types:
+                parsed_query.document_types = document_types
+            if industry_types:
+                parsed_query.industry_types = industry_types
             
             # Execute search based on parsed intent
             results = await self._execute_search(parsed_query, user_id, limit)
@@ -595,6 +616,21 @@ class AdvancedSearchService:
                 BronzeContract.owner_user_id == user_id
             )
             
+            # Apply document type filters
+            if query.document_types:
+                document_type_conditions = []
+                for doc_type in query.document_types:
+                    document_type_conditions.append(BronzeContract.document_category == doc_type)
+                    document_type_conditions.append(BronzeContract.document_type.ilike(f'%{doc_type}%'))
+                base_query = base_query.where(or_(*document_type_conditions))
+            
+            # Apply industry type filters
+            if query.industry_types:
+                industry_conditions = []
+                for industry in query.industry_types:
+                    industry_conditions.append(BronzeContract.industry_type.ilike(f'%{industry}%'))
+                base_query = base_query.where(or_(*industry_conditions))
+            
             result = await db.execute(base_query.limit(limit * 2))
             contracts = result.scalars().all()
             
@@ -641,7 +677,7 @@ class AdvancedSearchService:
                 result_item = SearchResult(
                     document_id=contract.contract_id,
                     title=contract.filename,
-                    document_type="document",
+                    document_type=contract.document_category or "document",
                     content_snippet=snippet,
                     relevance_score=combined_score,
                     match_type="hybrid",
@@ -651,7 +687,11 @@ class AdvancedSearchService:
                         "semantic_score": semantic_score,
                         "matched_keywords": matched_keywords,
                         "risk_level": contract.scores.risk_level if contract.scores else "unknown",
-                        "created_at": contract.created_at.isoformat() if contract.created_at else None
+                        "created_at": contract.created_at.isoformat() if contract.created_at else None,
+                        "document_type": contract.document_type,
+                        "document_category": contract.document_category,
+                        "industry_type": contract.industry_type,
+                        "user_description": contract.user_description
                     }
                 )
                 

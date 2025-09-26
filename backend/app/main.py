@@ -5,8 +5,12 @@ Clean, structured implementation with separated routers and schemas
 # Import early_config first to fan out DOCUSHIELD_CONFIG_JSON secret
 import early_config  # populates TIDB_OPERATIONAL_HOST/PORT/etc. from the JSON
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+import time
 
 # Setup environment-aware logging first
 from app.core.logging_config import setup_logging, get_clean_logger
@@ -52,8 +56,8 @@ app = FastAPI(
     title="DocuShield - Digital Twin Document Intelligence",
     description="Enterprise document analysis with multi-cluster TiDB and LLM Factory",
     version="2.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    docs_url="/docs" if settings.debug else None,  # Hide docs in production
+    redoc_url="/redoc" if settings.debug else None
 )
 
 # CORS middleware

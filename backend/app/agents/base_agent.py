@@ -33,6 +33,12 @@ class AgentContext:
     query: Optional[str] = None
     previous_results: Dict[str, Any] = None
     metadata: Dict[str, Any] = None
+    # Enhanced context with document classification
+    document_type: Optional[str] = None
+    industry_type: Optional[str] = None
+    document_category: Optional[str] = None
+    user_description: Optional[str] = None
+    external_enrichment: Dict[str, Any] = None
 
 @dataclass
 class AgentResult:
