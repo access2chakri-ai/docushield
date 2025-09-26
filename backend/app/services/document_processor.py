@@ -36,7 +36,7 @@ from app.models import (
 from app.services.risk_analyzer import risk_analyzer, DocumentType, RiskLevel
 from app.services.external_integrations import external_integrations
 from app.services.llm_factory import llm_factory, LLMTask
-from app.services.document_validator import document_validator, DocumentCategory
+from app.services.document_validator import document_classifier, DocumentCategory
 from app.agents import agent_orchestrator
 from app.core.config import settings
 
@@ -283,8 +283,8 @@ class DocumentProcessor:
             logger.warning(f"Text extraction failed during validation: {e}")
             text_content = ""
         
-        # Validate document
-        is_valid, doc_category, validation_details = await document_validator.validate_document(
+        # Classify document
+        is_valid, doc_category, validation_details = await document_classifier.classify_document(
             filename=contract.filename,
             text_content=text_content,
             mime_type=contract.mime_type
@@ -306,8 +306,10 @@ class DocumentProcessor:
             "status": "validated",
             "category": doc_category.value,
             "confidence": validation_details["confidence"],
-            "filename_score": validation_details["filename_score"],
-            "content_score": validation_details["content_score"],
+            "filename_indicators": validation_details.get("filename_indicators", []),
+            "content_indicators": validation_details.get("content_indicators", []),
+            "user_provided_type": validation_details.get("user_provided_type"),
+            "user_provided_industry": validation_details.get("user_provided_industry"),
             "reason": validation_details["reason"]
         }
     

@@ -32,13 +32,15 @@ async def advanced_search(
         if hasattr(request, 'document_filter') and request.document_filter:
             filters['document_filter'] = request.document_filter
         
-        # Execute search
+        # Execute search with document type and industry filtering
         search_response = await advanced_search_service.search(
             query=request.query,
             user_id=current_user.user_id,
             search_type=search_type,
             limit=request.limit,
-            filters=filters
+            filters=filters,
+            document_types=getattr(request, 'document_types', None),
+            industry_types=getattr(request, 'industry_types', None)
         )
         
         return search_response

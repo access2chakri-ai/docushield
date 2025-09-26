@@ -1,0 +1,39 @@
+{
+  "mcpServers": {
+    "document-enrichment": {
+      "command": "python",
+      "args": ["backend/mcp_servers/document_enrichment_server.py"],
+      "env": {
+        "SEC_API_BASE": "https://www.sec.gov/api",
+        "FEDERAL_REGISTER_API": "https://www.federalregister.gov/api/v1",
+        "COURT_LISTENER_API": "https://www.courtlistener.com/api/rest/v3",
+        "ALPHA_VANTAGE_API": "https://www.alphavantage.co/query"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get_company_filings",
+        "get_regulatory_updates", 
+        "get_legal_precedents",
+        "get_market_data",
+        "enrich_document_context"
+      ],
+      "disabledTools": []
+    },
+    "industry-intelligence": {
+      "command": "python", 
+      "args": ["backend/mcp_servers/industry_intelligence_server.py"],
+      "env": {
+        "FRED_API_BASE": "https://api.stlouisfed.org/fred",
+        "USPTO_API_BASE": "https://developer.uspto.gov/api-catalog"
+      },
+      "disabled": false,
+      "autoApprove": [
+        "get_industry_trends",
+        "get_economic_indicators",
+        "get_patent_data",
+        "analyze_industry_context"
+      ],
+      "disabledTools": []
+    }
+  }
+}

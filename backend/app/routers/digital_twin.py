@@ -1,88 +1,120 @@
 """
-Digital Twin router for DocuShield API
+Document Intelligence Digital Twin router for DocuShield API
 """
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List
+from typing import List, Dict, Any
 
 from app.core.dependencies import get_current_active_user
 from app.schemas.requests import SimulationRequest
 from app.schemas.responses import DigitalTwinInsightsResponse
-from app.services.digital_twin import digital_twin_service, WorkflowType
+from app.services.digital_twin import document_digital_twin, SimulationScenario
 
 router = APIRouter(prefix="/api/digital-twin", tags=["digital-twin"])
 
-@router.get("/workflows/{workflow_type}/insights", response_model=DigitalTwinInsightsResponse)
+@router.get("/insights")
 async def get_workflow_insights(
-    workflow_type: str,
     current_user = Depends(get_current_active_user)
 ):
-    """Get Digital Twin insights for specific workflow"""
+    """Get Document Processing Digital Twin insights"""
     try:
-        # Convert string to enum
-        workflow = WorkflowType(workflow_type.lower())
-        
         # Get insights from digital twin service
-        insights = await digital_twin_service.get_workflow_insights(
-            workflow_type=workflow,
+        insights = await document_digital_twin.get_workflow_insights(
             user_id=current_user.user_id
         )
         
-        return DigitalTwinInsightsResponse(
-            workflow_type=workflow_type,
-            metrics=insights.get("metrics", {}),
-            risk_patterns=insights.get("risk_patterns", []),
-            recommendations=insights.get("recommendations", [])
-        )
+        return {
+            "user_id": current_user.user_id,
+            "insights": insights,
+            "timestamp": "2024-01-01T00:00:00Z"
+        }
         
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid workflow type: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Digital twin insights failed: {str(e)}")
+
+@router.get("/scenarios")
+async def list_scenarios(
+    current_user = Depends(get_current_active_user)
+):
+    """Get available simulation scenarios"""
+    try:
+        scenarios = await document_digital_twin.get_available_scenarios()
+        return {
+            "scenarios": scenarios,
+            "user_id": current_user.user_id
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get scenarios: {str(e)}")
+
+@router.get("/system-state")
+async def get_system_state(
+    current_user = Depends(get_current_active_user)
+):
+    """Get current document processing system state"""
+    try:
+        state = await document_digital_twin.get_current_system_state(current_user.user_id)
+        return {
+            "user_id": current_user.user_id,
+            "system_state": {
+                "total_documents": state.total_documents,
+                "processing_capacity": state.processing_capacity,
+                "average_processing_time": state.average_processing_time,
+                "accuracy_rate": state.accuracy_rate,
+                "risk_distribution": state.risk_distribution,
+                "compliance_rate": state.compliance_rate,
+                "knowledge_coverage": state.knowledge_coverage,
+                "system_health": state.system_health
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get system state: {str(e)}")
 
 @router.post("/simulate")
 async def create_simulation(
     request: SimulationRequest,
     current_user = Depends(get_current_active_user)
 ):
-    """Create a new Digital Twin simulation"""
+    """Create a new Document Processing simulation"""
     try:
-        # Create simulation
-        simulation_result = await digital_twin_service.create_simulation(
-            scenario_name=request.scenario_name,
-            description=request.description,
-            document_ids=request.document_ids,
-            parameter_changes=request.parameter_changes,
-            user_id=current_user.user_id
-        )
+        # Convert scenario name to enum
+        try:
+            scenario_type = SimulationScenario(request.scenario_name.lower().replace(" ", "_"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid scenario type: {request.scenario_name}")
         
-        return simulation_result
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Simulation creation failed: {str(e)}")
-
-@router.post("/simulations")
-async def create_simulation_legacy(
-    request: SimulationRequest,
-    current_user = Depends(get_current_active_user)
-):
-    """Create a new Digital Twin simulation (legacy endpoint)"""
-    try:
         # Create simulation
-        simulation_result = await digital_twin_service.create_simulation(
-            scenario_name=request.scenario_name,
-            description=request.description,
-            document_ids=request.document_ids,
-            parameter_changes=request.parameter_changes,
-            user_id=current_user.user_id
+        simulation_result = await document_digital_twin.create_simulation(
+            scenario_type=scenario_type,
+            user_id=current_user.user_id,
+            custom_parameters=request.parameter_changes
         )
         
         return {
-            "simulation_id": simulation_result.get("simulation_id"),
+            "simulation_id": simulation_result.scenario_id,
             "scenario_name": request.scenario_name,
-            "status": "created",
-            "user_id": current_user.user_id,
-            "message": "Simulation created successfully"
+            "baseline_state": {
+                "total_documents": simulation_result.baseline_state.total_documents,
+                "processing_capacity": simulation_result.baseline_state.processing_capacity,
+                "average_processing_time": simulation_result.baseline_state.average_processing_time,
+                "accuracy_rate": simulation_result.baseline_state.accuracy_rate,
+                "system_health": simulation_result.baseline_state.system_health
+            },
+            "simulated_state": {
+                "total_documents": simulation_result.simulated_state.total_documents,
+                "processing_capacity": simulation_result.simulated_state.processing_capacity,
+                "average_processing_time": simulation_result.simulated_state.average_processing_time,
+                "accuracy_rate": simulation_result.simulated_state.accuracy_rate,
+                "system_health": simulation_result.simulated_state.system_health
+            },
+            "impact_analysis": simulation_result.impact_analysis,
+            "recommendations": simulation_result.recommendations,
+            "confidence_score": simulation_result.confidence_score,
+            "execution_time_ms": simulation_result.execution_time_ms
         }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Simulation creation failed: {str(e)}")
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Simulation creation failed: {str(e)}")
