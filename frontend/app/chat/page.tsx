@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
 import { config } from '@/utils/config';
+import DocumentTypeFilter from '@/app/components/DocumentTypeFilter';
 
 
 interface Message {
@@ -48,6 +49,8 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedDataset] = useState('default');
+  const [selectedDocumentTypes, setSelectedDocumentTypes] = useState<string[]>([]);
+  const [selectedIndustryTypes, setSelectedIndustryTypes] = useState<string[]>([]);
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null);
   const [availableDocuments, setAvailableDocuments] = useState<Document[]>([]);
   const [selectedDocumentName, setSelectedDocumentName] = useState<string>('');
@@ -173,7 +176,9 @@ export default function ChatPage() {
           conversation_history: messages.slice(-5).map(msg => ({
             role: msg.type === 'user' ? 'user' : 'assistant',
             content: msg.content
-          }))
+          })),
+          document_types: selectedDocumentTypes.length > 0 ? selectedDocumentTypes : null,
+          industry_types: selectedIndustryTypes.length > 0 ? selectedIndustryTypes : null
         })
       }, 120000); // 2 minutes timeout for AI operations
 
@@ -310,6 +315,20 @@ export default function ChatPage() {
             </div>
           </div>
         )}
+
+        {/* Document Type Filter */}
+        <div className="mb-6">
+          <DocumentTypeFilter
+            selectedDocumentTypes={selectedDocumentTypes}
+            selectedIndustryTypes={selectedIndustryTypes}
+            onDocumentTypesChange={setSelectedDocumentTypes}
+            onIndustryTypesChange={setSelectedIndustryTypes}
+            onClearFilters={() => {
+              setSelectedDocumentTypes([]);
+              setSelectedIndustryTypes([]);
+            }}
+          />
+        </div>
 
         <div className="bg-white rounded-lg shadow-lg">
           {/* Chat Messages */}

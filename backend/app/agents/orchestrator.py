@@ -13,6 +13,7 @@ from .base_agent import BaseAgent, AgentContext, AgentResult
 from .search_agent import SearchAgent
 from .clause_analyzer_agent import ClauseAnalyzerAgent
 from .simple_analyzer_agent import SimpleAnalyzerAgent
+from .enhanced_analyzer_agent import EnhancedAnalyzerAgent
 from app.database import get_operational_db
 from app.models import ProcessingRun, ProcessingStep
 from sqlalchemy import text
@@ -47,6 +48,7 @@ class AgentOrchestrator:
             "search": SearchAgent(),
             "clause_analyzer": ClauseAnalyzerAgent(),
             "simple_analyzer": SimpleAnalyzerAgent(),
+            "enhanced_analyzer": EnhancedAnalyzerAgent(),
             # Additional agents can be added here
         }
         
@@ -212,6 +214,8 @@ class AgentOrchestrator:
                 independent_agents.append(("search", self.agents["search"]))
             if "clause_analyzer" in agent_names:
                 independent_agents.append(("clause_analyzer", self.agents["clause_analyzer"]))
+            if "enhanced_analyzer" in agent_names:
+                independent_agents.append(("enhanced_analyzer", self.agents["enhanced_analyzer"]))
             
             # Run independent agents in parallel
             if independent_agents:
@@ -469,7 +473,9 @@ class AgentOrchestrator:
         query: str,
         user_id: str,
         document_id: Optional[str] = None,
-        conversation_history: List[Dict[str, Any]] = None
+        conversation_history: List[Dict[str, Any]] = None,
+        document_types: Optional[List[str]] = None,
+        industry_types: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Process a user query for chat interface with intelligent routing and enhanced context
@@ -481,7 +487,12 @@ class AgentOrchestrator:
             from .query_processor import query_processor
             
             # Analyze the query to understand intent and requirements
-            user_context = {"user_id": user_id, "document_id": document_id}
+            user_context = {
+                "user_id": user_id, 
+                "document_id": document_id,
+                "document_types": document_types,
+                "industry_types": industry_types
+            }
             query_analysis = await query_processor.analyze_query(query, user_context)
             
             self.logger.info(f"Query analysis: type={query_analysis.query_type.value}, intent={query_analysis.intent.value}, confidence={query_analysis.confidence}")

@@ -12,11 +12,17 @@ interface UploadedDocument {
   status: 'uploaded' | 'processing' | 'completed' | 'failed' | 'validation_failed';
   upload_time: string;
   processing_error?: string;
+  document_type?: string;
+  industry_type?: string;
+  document_category?: string;
 }
 
 export default function UploadPage() {
   const [user, setUser] = useState<User | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [documentType, setDocumentType] = useState<string>('');
+  const [industryType, setIndustryType] = useState<string>('');
+  const [userDescription, setUserDescription] = useState<string>('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -213,6 +219,11 @@ export default function UploadPage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
+      
+      // Add document classification data
+      if (documentType) formData.append('document_type', documentType);
+      if (industryType) formData.append('industry_type', industryType);
+      if (userDescription) formData.append('user_description', userDescription);
 
       const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/upload`, {
         method: 'POST',
@@ -243,7 +254,10 @@ export default function UploadPage() {
         contract_id: result.contract_id,
         filename: file.name,
         status: 'processing',
-        upload_time: new Date().toISOString()
+        upload_time: new Date().toISOString(),
+        document_type: result.document_type,
+        industry_type: result.industry_type,
+        document_category: result.document_category
       };
       
       setUploadedDocuments(prev => [newDocument, ...prev]);
@@ -251,6 +265,9 @@ export default function UploadPage() {
       
       setUploadResult(`✅ Upload successful! Processing ${file.name}...`);
       setFile(null);
+      setDocumentType('');
+      setIndustryType('');
+      setUserDescription('');
       
       // Reset file input
       const fileInput = document.getElementById('fileInput') as HTMLInputElement;
@@ -303,7 +320,8 @@ export default function UploadPage() {
           <div className="mb-6">
             <h2 className="text-xl font-semibold mb-4">📄 Document Upload</h2>
             <p className="text-gray-600 mb-4">
-              Upload PDF, DOCX, or text files to create vector embeddings and enable intelligent search.
+              Upload ANY document type - contracts, reports, manuals, research papers, presentations, and more! 
+              We'll analyze and create vector embeddings for intelligent search.
             </p>
           </div>
 
@@ -321,7 +339,85 @@ export default function UploadPage() {
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
               <p className="mt-1 text-sm text-gray-500">
-                Supported formats: PDF, DOCX, TXT, MD
+                Supported formats: PDF, DOCX, TXT, MD - All document types accepted!
+              </p>
+            </div>
+
+            {/* Document Type Selection */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Document Type (Optional)
+                </label>
+                <select
+                  value={documentType}
+                  onChange={(e) => setDocumentType(e.target.value)}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Auto-detect from content</option>
+                  <option value="Contract">Contract</option>
+                  <option value="Agreement">Agreement</option>
+                  <option value="Invoice">Invoice</option>
+                  <option value="Proposal">Proposal</option>
+                  <option value="Report">Report</option>
+                  <option value="Policy">Policy</option>
+                  <option value="Manual">Manual/Guide</option>
+                  <option value="Specification">Technical Specification</option>
+                  <option value="Legal Document">Legal Document</option>
+                  <option value="Research Paper">Research Paper</option>
+                  <option value="Whitepaper">Whitepaper</option>
+                  <option value="Presentation">Presentation</option>
+                  <option value="Memo">Memo</option>
+                  <option value="Email">Email</option>
+                  <option value="Letter">Letter</option>
+                  <option value="Form">Form</option>
+                  <option value="API Documentation">API Documentation</option>
+                  <option value="User Guide">User Guide</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Industry Type (Optional)
+                </label>
+                <select
+                  value={industryType}
+                  onChange={(e) => setIndustryType(e.target.value)}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select industry (optional)</option>
+                  <option value="Technology/SaaS">Technology/SaaS</option>
+                  <option value="Legal">Legal</option>
+                  <option value="Financial Services">Financial Services</option>
+                  <option value="Healthcare">Healthcare</option>
+                  <option value="Real Estate">Real Estate</option>
+                  <option value="Manufacturing">Manufacturing</option>
+                  <option value="Retail">Retail</option>
+                  <option value="Education">Education</option>
+                  <option value="Government">Government</option>
+                  <option value="Non-profit">Non-profit</option>
+                  <option value="Consulting">Consulting</option>
+                  <option value="Media">Media</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            {/* User Description */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Document Description (Optional)
+              </label>
+              <textarea
+                value={userDescription}
+                onChange={(e) => setUserDescription(e.target.value)}
+                placeholder="Briefly describe what this document is about..."
+                rows={3}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              />
+              <p className="mt-1 text-sm text-gray-500">
+                Help us understand your document better for more accurate analysis
               </p>
             </div>
 
@@ -331,6 +427,15 @@ export default function UploadPage() {
                 <h3 className="font-medium text-blue-900">Selected File:</h3>
                 <p className="text-blue-700">📄 {file.name}</p>
                 <p className="text-sm text-blue-600">Size: {(file.size / 1024).toFixed(1)} KB</p>
+                {documentType && (
+                  <p className="text-sm text-blue-600">Type: {documentType}</p>
+                )}
+                {industryType && (
+                  <p className="text-sm text-blue-600">Industry: {industryType}</p>
+                )}
+                {userDescription && (
+                  <p className="text-sm text-blue-600">Description: {userDescription}</p>
+                )}
               </div>
             )}
 
@@ -405,6 +510,15 @@ export default function UploadPage() {
                         <p className="text-sm text-gray-500">
                           Uploaded {new Date(doc.upload_time).toLocaleTimeString()}
                         </p>
+                        {doc.document_type && (
+                          <p className="text-xs text-gray-500">Type: {doc.document_type}</p>
+                        )}
+                        {doc.industry_type && (
+                          <p className="text-xs text-gray-500">Industry: {doc.industry_type}</p>
+                        )}
+                        {doc.document_category && (
+                          <p className="text-xs text-blue-600">Classified as: {doc.document_category}</p>
+                        )}
                       </div>
                       <div className="flex items-center space-x-2">
                         {doc.status === 'processing' && (
@@ -538,13 +652,15 @@ export default function UploadPage() {
         </div>
 
         {/* Tips */}
-        <div className="mt-8 bg-yellow-50 rounded-lg p-6">
-          <h3 className="font-semibold text-yellow-800 mb-2">💡 Tips for Best Results</h3>
-          <ul className="text-sm text-yellow-700 space-y-1">
-            <li>• Upload documents with clear, well-structured content</li>
-            <li>• PDFs with text (not just images) work best</li>
-            <li>• Larger documents provide more context for analysis</li>
-            <li>• Upload multiple related documents for comprehensive answers</li>
+        <div className="mt-8 bg-green-50 rounded-lg p-6">
+          <h3 className="font-semibold text-green-800 mb-2">🎉 Now Supporting ALL Document Types!</h3>
+          <ul className="text-sm text-green-700 space-y-1">
+            <li>• ✅ Business documents: contracts, invoices, proposals, reports</li>
+            <li>• ✅ Technical documents: specifications, manuals, API docs</li>
+            <li>• ✅ Academic documents: research papers, whitepapers, case studies</li>
+            <li>• ✅ General documents: presentations, memos, emails, letters</li>
+            <li>• 💡 Specify document type and industry for better analysis</li>
+            <li>• 🚀 All documents get the same powerful AI analysis!</li>
           </ul>
         </div>
       </div>

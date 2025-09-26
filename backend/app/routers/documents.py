@@ -1,7 +1,7 @@
 """
 Document management router for DocuShield API
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
@@ -30,8 +30,9 @@ from app.core.dependencies import get_current_active_user
 from app.schemas.requests import ProcessContractRequest
 from app.schemas.responses import ContractAnalysisResponse
 from app.services.document_processor import document_processor
-from app.services.document_validator import document_validator, DocumentCategory
+from app.services.document_validator import document_classifier, DocumentCategory
 from app.core.config import settings
+from app.core.security import security_validator, rate_limiter
 from app.routers.document_highlights import document_highlighter
 
 logger = logging.getLogger(__name__)
@@ -40,13 +41,26 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
+    document_type: Optional[str] = Form(None),
+    industry_type: Optional[str] = Form(None),
+    user_description: Optional[str] = Form(None),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_operational_db)
 ):
     """Upload document and trigger processing pipeline with comprehensive validation"""
     try:
-        # 1. Validate file basics
+        # 0. Rate limiting check
+        if not rate_limiter.is_allowed(f"upload_{current_user.user_id}", max_requests=50, window_seconds=3600):
+            raise HTTPException(
+                status_code=429,
+                detail="Upload rate limit exceeded. Please try again later."
+            )
+        
+        # 1. Security validation
+        security_validator.validate_upload_file(file)
+        
+        # 2. Validate file basics
         if not file.filename:
             raise HTTPException(
                 status_code=400, 
@@ -108,6 +122,13 @@ async def upload_document(
             )
         
         content = bytes(content)
+        
+        # 4.5. Security content validation
+        if not security_validator.validate_file_content(content, file.filename):
+            raise HTTPException(
+                status_code=400,
+                detail="File content validation failed. The file may contain malicious content or be corrupted."
+            )
         
         # 5. Validate minimum file size (avoid empty files)
         if len(content) < 100:  # Less than 100 bytes
@@ -184,34 +205,18 @@ async def upload_document(
             logger.warning(f"Text extraction failed for validation: {e}")
             text_content = ""
         
-        # 9. Validate document type and business relevance
-        is_valid, doc_category, validation_details = await document_validator.validate_document(
+        # 9. Classify document type (no restrictions - accept all documents)
+        from app.services.document_validator import document_classifier
+        
+        is_valid, doc_category, classification_details = await document_classifier.classify_document(
             filename=file.filename,
             text_content=text_content,
-            mime_type=file.content_type or "application/octet-stream"
+            mime_type=file.content_type or "application/octet-stream",
+            user_document_type=document_type,
+            user_industry_type=industry_type
         )
         
-        if not is_valid:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "message": "Document not suitable for processing",
-                    "reason": validation_details["reason"],
-                    "supported_types": [
-                        "SaaS contracts and agreements",
-                        "Vendor/supplier agreements", 
-                        "Software licenses and subscriptions",
-                        "Invoices and billing documents",
-                        "Procurement documents (SaaS/software related)",
-                        "Service agreements and SLAs"
-                    ],
-                    "confidence": validation_details["confidence"],
-                    "filename_score": validation_details["filename_score"],
-                    "content_score": validation_details["content_score"]
-                }
-            )
-        
-        logger.info(f"Document validated as {doc_category.value} with confidence {validation_details['confidence']:.2f}")
+        logger.info(f"Document classified as {doc_category.value} with confidence {classification_details['confidence']:.2f}")
         
         # Create contract record - store all files in TiDB LONGBLOB
         contract = BronzeContract(
@@ -222,7 +227,12 @@ async def upload_document(
             raw_bytes=content,  # Store full file content in TiDB
             owner_user_id=current_user.user_id,
             source="upload",
-            status="uploaded"
+            status="uploaded",
+            # New classification fields
+            document_type=document_type,
+            industry_type=industry_type,
+            document_category=doc_category.value,
+            user_description=user_description
         )
         
         logger.info(f"Storing file in TiDB: {file.filename} ({len(content)} bytes)")
@@ -242,7 +252,11 @@ async def upload_document(
             "contract_id": contract.contract_id,
             "filename": contract.filename,
             "file_size": contract.file_size,
-            "status": "uploaded"
+            "status": "uploaded",
+            "document_type": contract.document_type,
+            "industry_type": contract.industry_type,
+            "document_category": contract.document_category,
+            "classification_confidence": classification_details["confidence"]
         }
         
     except HTTPException:
@@ -536,7 +550,8 @@ async def get_contract_analysis(
         # Get contract with all related data
         result = await db.execute(
             select(BronzeContract).options(
-                selectinload(BronzeContract.clause_spans)
+                selectinload(BronzeContract.clause_spans),
+                selectinload(BronzeContract.text_raw)
             ).where(
                 (BronzeContract.contract_id == contract_id) & 
                 (BronzeContract.owner_user_id == current_user.user_id)
@@ -994,8 +1009,23 @@ async def process_contract_background(contract_id: str, user_id: str):
     try:
         logger.info(f"🔄 Starting background processing for contract {contract_id}")
         
-        # Set processing timeout (10 minutes max)
-        timeout_seconds = 600  # 10 minutes
+        # Get contract info for debugging
+        async for db in get_operational_db():
+            try:
+                result = await db.execute(
+                    text("SELECT filename, mime_type, file_size FROM bronze_contracts WHERE contract_id = :contract_id"),
+                    {"contract_id": contract_id}
+                )
+                contract_info = result.fetchone()
+                if contract_info:
+                    logger.info(f"📄 Processing: {contract_info.filename} ({contract_info.mime_type}, {contract_info.file_size} bytes)")
+            except Exception as e:
+                logger.warning(f"Could not get contract info: {e}")
+            finally:
+                break
+        
+        # Set processing timeout (5 minutes for better responsiveness)
+        timeout_seconds = 300  # 5 minutes
         
         # Update contract status to processing
         async for db in get_operational_db():
@@ -1005,6 +1035,9 @@ async def process_contract_background(contract_id: str, user_id: str):
                     {"contract_id": contract_id}
                 )
                 await db.commit()
+                logger.info(f"✅ Status updated to 'processing' for {contract_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to update status to processing: {e}")
             finally:
                 break  # Prevent infinite loop
         

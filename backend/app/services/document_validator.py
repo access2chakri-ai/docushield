@@ -1,6 +1,6 @@
 """
-Document Type Validation Service
-Validates documents are relevant to SaaS/business context before processing
+Document Classification Service
+Classifies any document type based on content analysis
 """
 import logging
 import re
@@ -12,213 +12,240 @@ from app.services.llm_factory import llm_factory, LLMTask
 logger = logging.getLogger(__name__)
 
 class DocumentCategory(Enum):
-    """Supported document categories for processing"""
-    SAAS_CONTRACT = "saas_contract"
-    VENDOR_AGREEMENT = "vendor_agreement" 
+    """All supported document categories for processing"""
+    # Business Documents
+    CONTRACT = "contract"
+    AGREEMENT = "agreement"
     INVOICE = "invoice"
-    PROCUREMENT = "procurement"
-    SERVICE_AGREEMENT = "service_agreement"
-    SUBSCRIPTION = "subscription"
-    UNSUPPORTED = "unsupported"
+    PROPOSAL = "proposal"
+    REPORT = "report"
+    POLICY = "policy"
+    MANUAL = "manual"
+    SPECIFICATION = "specification"
+    
+    # Legal Documents
+    LEGAL_DOCUMENT = "legal_document"
+    COMPLIANCE = "compliance"
+    REGULATION = "regulation"
+    
+    # Technical Documents
+    TECHNICAL_SPEC = "technical_spec"
+    API_DOCUMENTATION = "api_documentation"
+    USER_GUIDE = "user_guide"
+    
+    # Academic/Research
+    RESEARCH_PAPER = "research_paper"
+    WHITEPAPER = "whitepaper"
+    CASE_STUDY = "case_study"
+    
+    # General Documents
+    PRESENTATION = "presentation"
+    MEMO = "memo"
+    EMAIL = "email"
+    LETTER = "letter"
+    FORM = "form"
+    
+    # Catch-all
+    GENERAL_DOCUMENT = "general_document"
+    UNKNOWN = "unknown"
 
-class DocumentValidator:
+class DocumentClassifier:
     """
-    Validates if documents are relevant for SaaS business processing
+    Classifies any document type based on content analysis
+    No restrictions - processes all document types
     """
     
     def __init__(self):
-        # Keywords that indicate SaaS/business relevance
-        self.saas_keywords = [
-            "software", "saas", "service", "subscription", "license", "agreement",
-            "contract", "vendor", "supplier", "procurement", "invoice", "billing",
-            "terms of service", "service level", "sla", "api", "cloud", "platform",
-            "application", "enterprise", "business", "commercial", "payment",
-            "pricing", "fee", "cost", "renewal", "termination", "liability",
-            "indemnification", "data processing", "privacy", "security",
-            "intellectual property", "confidential", "non-disclosure"
-        ]
-        
-        # Patterns that indicate non-business documents
-        self.exclude_patterns = [
-            r"personal.*letter", r"family.*photo", r"vacation.*plan",
-            r"recipe", r"diary", r"journal", r"homework", r"assignment",
-            r"creative.*writing", r"story", r"poem", r"novel",
-            r"medical.*record", r"prescription", r"health.*report"
-        ]
+        # Document type indicators
+        self.document_indicators = {
+            "contract": ["contract", "agreement", "terms", "conditions", "party", "parties", "whereas", "hereby"],
+            "invoice": ["invoice", "bill", "payment", "amount due", "total", "tax", "subtotal"],
+            "report": ["report", "analysis", "findings", "summary", "conclusion", "executive summary"],
+            "manual": ["manual", "guide", "instructions", "how to", "step by step", "procedure"],
+            "policy": ["policy", "procedure", "guidelines", "rules", "regulations", "compliance"],
+            "specification": ["specification", "requirements", "technical", "design", "architecture"],
+            "research_paper": ["abstract", "introduction", "methodology", "results", "discussion", "references"],
+            "presentation": ["slide", "presentation", "agenda", "overview", "outline"],
+            "legal_document": ["legal", "law", "statute", "regulation", "compliance", "court", "judgment"],
+            "email": ["from:", "to:", "subject:", "dear", "regards", "sincerely"],
+            "memo": ["memo", "memorandum", "to:", "from:", "date:", "re:"],
+            "proposal": ["proposal", "bid", "quote", "estimate", "scope of work", "deliverables"]
+        }
 
-    async def validate_document(
+    async def classify_document(
         self, 
         filename: str, 
         text_content: str, 
-        mime_type: str
+        mime_type: str,
+        user_document_type: Optional[str] = None,
+        user_industry_type: Optional[str] = None
     ) -> Tuple[bool, DocumentCategory, Dict[str, Any]]:
         """
-        Validate if document should be processed
+        Classify any document type - no restrictions
         
         Returns:
-            (is_valid, category, validation_details)
+            (is_valid, category, classification_details)
         """
-        validation_details = {
-            "filename_score": 0.0,
-            "content_score": 0.0,
+        classification_details = {
+            "filename_indicators": [],
+            "content_indicators": [],
             "ai_classification": None,
-            "reason": "",
-            "confidence": 0.0
+            "user_provided_type": user_document_type,
+            "user_provided_industry": user_industry_type,
+            "confidence": 0.8,
+            "reason": "Document accepted for processing"
         }
         
         try:
-            # Step 1: Quick filename-based validation
-            filename_score = self._analyze_filename(filename)
-            validation_details["filename_score"] = filename_score
+            # Always accept the document - just classify it
+            category = DocumentCategory.GENERAL_DOCUMENT
             
-            # Step 2: Content-based keyword analysis
-            content_score = self._analyze_content_keywords(text_content)
-            validation_details["content_score"] = content_score
+            # Step 1: Use user-provided type if available
+            if user_document_type:
+                category = self._map_user_type_to_category(user_document_type)
+                classification_details["reason"] = f"User specified document type: {user_document_type}"
+                classification_details["confidence"] = 0.9
+                return True, category, classification_details
             
-            # Step 3: AI-based classification for borderline cases
-            combined_score = (filename_score + content_score) / 2
+            # Step 2: Analyze filename for type indicators
+            filename_indicators = self._analyze_filename_indicators(filename)
+            classification_details["filename_indicators"] = filename_indicators
             
-            if combined_score < 0.3:
-                # Clearly not business-related
-                validation_details["reason"] = "Document does not appear to be business/SaaS related"
-                validation_details["confidence"] = 1.0 - combined_score
-                return False, DocumentCategory.UNSUPPORTED, validation_details
+            # Step 3: Analyze content for type indicators
+            content_indicators = self._analyze_content_indicators(text_content)
+            classification_details["content_indicators"] = content_indicators
             
-            elif combined_score > 0.7:
-                # Clearly business-related
-                category = self._determine_category(filename, text_content)
-                validation_details["reason"] = f"Document classified as {category.value}"
-                validation_details["confidence"] = combined_score
-                return True, category, validation_details
-            
+            # Step 4: Determine category based on indicators
+            if filename_indicators or content_indicators:
+                category = self._determine_category_from_indicators(filename_indicators + content_indicators)
+                classification_details["confidence"] = 0.7
             else:
-                # Borderline case - use AI classification
+                # Step 5: Use AI classification for unknown documents
                 ai_result = await self._ai_classify_document(filename, text_content[:2000])
-                validation_details["ai_classification"] = ai_result
-                
-                is_valid = ai_result["is_business_relevant"]
-                category = DocumentCategory(ai_result["category"]) if is_valid else DocumentCategory.UNSUPPORTED
-                validation_details["confidence"] = ai_result["confidence"]
-                validation_details["reason"] = ai_result["reasoning"]
-                
-                return is_valid, category, validation_details
+                classification_details["ai_classification"] = ai_result
+                category = DocumentCategory(ai_result.get("category", "general_document"))
+                classification_details["confidence"] = ai_result.get("confidence", 0.6)
+                classification_details["reason"] = ai_result.get("reasoning", "AI-based classification")
+            
+            return True, category, classification_details
                 
         except Exception as e:
-            logger.error(f"Document validation failed: {e}")
-            # Fail safe - reject document if validation fails
-            validation_details["reason"] = f"Validation error: {str(e)}"
-            validation_details["confidence"] = 0.0
-            return False, DocumentCategory.UNSUPPORTED, validation_details
+            logger.error(f"Document classification failed: {e}")
+            # Always accept document even if classification fails
+            classification_details["reason"] = f"Classification completed with fallback: {str(e)}"
+            classification_details["confidence"] = 0.5
+            return True, DocumentCategory.GENERAL_DOCUMENT, classification_details
 
-    def _analyze_filename(self, filename: str) -> float:
-        """Analyze filename for business relevance indicators"""
+    def _analyze_filename_indicators(self, filename: str) -> List[str]:
+        """Analyze filename for document type indicators"""
         filename_lower = filename.lower()
+        indicators = []
         
-        # Check for exclude patterns
-        for pattern in self.exclude_patterns:
-            if re.search(pattern, filename_lower):
-                return 0.0
+        for doc_type, keywords in self.document_indicators.items():
+            for keyword in keywords:
+                if keyword in filename_lower:
+                    indicators.append(doc_type)
+                    break
         
-        # Count SaaS/business keywords in filename
-        keyword_matches = sum(1 for keyword in self.saas_keywords if keyword in filename_lower)
-        
-        # Specific filename patterns that indicate business documents
-        business_patterns = [
-            r"contract", r"agreement", r"invoice", r"quote", r"proposal",
-            r"terms", r"service", r"vendor", r"supplier", r"procurement",
-            r"subscription", r"license", r"sla", r"msa", r"nda"
-        ]
-        
-        pattern_matches = sum(1 for pattern in business_patterns if re.search(pattern, filename_lower))
-        
-        # Calculate score (0-1)
-        total_score = (keyword_matches * 0.3) + (pattern_matches * 0.7)
-        return min(1.0, total_score / 3.0)  # Normalize to 0-1
+        return indicators
 
-    def _analyze_content_keywords(self, text_content: str) -> float:
-        """Analyze text content for business relevance"""
-        if not text_content or len(text_content) < 100:
-            return 0.0
+    def _analyze_content_indicators(self, text_content: str) -> List[str]:
+        """Analyze text content for document type indicators"""
+        if not text_content or len(text_content) < 50:
+            return []
         
         text_lower = text_content[:3000].lower()  # Analyze first 3000 chars
+        indicators = []
         
-        # Check for exclude patterns
-        for pattern in self.exclude_patterns:
-            if re.search(pattern, text_lower):
-                return 0.0
+        for doc_type, keywords in self.document_indicators.items():
+            matches = sum(1 for keyword in keywords if keyword in text_lower)
+            if matches >= 2:  # Need at least 2 keyword matches
+                indicators.append(doc_type)
         
-        # Count keyword occurrences
-        keyword_score = 0
-        for keyword in self.saas_keywords:
-            if keyword in text_lower:
-                # Weight more important keywords higher
-                if keyword in ["contract", "agreement", "service", "license", "invoice"]:
-                    keyword_score += 2
-                else:
-                    keyword_score += 1
-        
-        # Look for business document structure indicators
-        structure_indicators = [
-            "whereas", "hereby", "party", "parties", "terms and conditions",
-            "liability", "indemnification", "termination", "renewal",
-            "payment terms", "invoice number", "due date", "amount due",
-            "service level", "scope of work", "deliverables"
-        ]
-        
-        structure_score = sum(2 for indicator in structure_indicators if indicator in text_lower)
-        
-        total_score = keyword_score + structure_score
-        return min(1.0, total_score / 20.0)  # Normalize to 0-1
+        return indicators
 
-    def _determine_category(self, filename: str, text_content: str) -> DocumentCategory:
-        """Determine specific document category"""
-        combined_text = f"{filename} {text_content[:1000]}".lower()
+    def _map_user_type_to_category(self, user_type: str) -> DocumentCategory:
+        """Map user-provided document type to internal category"""
+        user_type_lower = user_type.lower()
         
-        # Category classification based on keywords
-        if any(word in combined_text for word in ["invoice", "bill", "payment", "amount due"]):
-            return DocumentCategory.INVOICE
-        elif any(word in combined_text for word in ["subscription", "recurring", "monthly", "annual"]):
-            return DocumentCategory.SUBSCRIPTION
-        elif any(word in combined_text for word in ["procurement", "purchase", "vendor", "supplier"]):
-            return DocumentCategory.PROCUREMENT
-        elif any(word in combined_text for word in ["service agreement", "sla", "service level"]):
-            return DocumentCategory.SERVICE_AGREEMENT
-        elif any(word in combined_text for word in ["saas", "software", "license", "platform"]):
-            return DocumentCategory.SAAS_CONTRACT
-        else:
-            return DocumentCategory.VENDOR_AGREEMENT
+        # Direct mappings
+        type_mappings = {
+            "contract": DocumentCategory.CONTRACT,
+            "agreement": DocumentCategory.AGREEMENT,
+            "invoice": DocumentCategory.INVOICE,
+            "proposal": DocumentCategory.PROPOSAL,
+            "report": DocumentCategory.REPORT,
+            "policy": DocumentCategory.POLICY,
+            "manual": DocumentCategory.MANUAL,
+            "specification": DocumentCategory.SPECIFICATION,
+            "legal": DocumentCategory.LEGAL_DOCUMENT,
+            "research": DocumentCategory.RESEARCH_PAPER,
+            "whitepaper": DocumentCategory.WHITEPAPER,
+            "presentation": DocumentCategory.PRESENTATION,
+            "memo": DocumentCategory.MEMO,
+            "email": DocumentCategory.EMAIL,
+            "letter": DocumentCategory.LETTER,
+            "form": DocumentCategory.FORM
+        }
+        
+        for key, category in type_mappings.items():
+            if key in user_type_lower:
+                return category
+        
+        return DocumentCategory.GENERAL_DOCUMENT
+    
+    def _determine_category_from_indicators(self, indicators: List[str]) -> DocumentCategory:
+        """Determine category from detected indicators"""
+        if not indicators:
+            return DocumentCategory.GENERAL_DOCUMENT
+        
+        # Count occurrences and pick most common
+        indicator_counts = {}
+        for indicator in indicators:
+            indicator_counts[indicator] = indicator_counts.get(indicator, 0) + 1
+        
+        most_common = max(indicator_counts.items(), key=lambda x: x[1])[0]
+        
+        # Map to enum
+        category_map = {
+            "contract": DocumentCategory.CONTRACT,
+            "invoice": DocumentCategory.INVOICE,
+            "report": DocumentCategory.REPORT,
+            "manual": DocumentCategory.MANUAL,
+            "policy": DocumentCategory.POLICY,
+            "specification": DocumentCategory.SPECIFICATION,
+            "research_paper": DocumentCategory.RESEARCH_PAPER,
+            "presentation": DocumentCategory.PRESENTATION,
+            "legal_document": DocumentCategory.LEGAL_DOCUMENT,
+            "email": DocumentCategory.EMAIL,
+            "memo": DocumentCategory.MEMO,
+            "proposal": DocumentCategory.PROPOSAL
+        }
+        
+        return category_map.get(most_common, DocumentCategory.GENERAL_DOCUMENT)
 
     async def _ai_classify_document(self, filename: str, text_sample: str) -> Dict[str, Any]:
-        """Use AI to classify borderline documents"""
+        """Use AI to classify any document type"""
         try:
             classification_prompt = f"""
-            Analyze this document to determine if it's relevant for SaaS business document processing.
+            Analyze this document and classify its type. We accept ALL document types.
             
-            We ONLY process these types of business documents:
-            - SaaS contracts and agreements
-            - Vendor/supplier agreements
-            - Software licenses and subscriptions
-            - Invoices and billing documents
-            - Procurement documents related to SaaS/software
-            - Service agreements and SLAs
-            
-            We DO NOT process:
-            - Personal documents
-            - Creative writing
-            - Academic papers
-            - Medical records
-            - General correspondence
-            - Non-business content
+            Common document types:
+            - contract, agreement, invoice, proposal, report
+            - policy, manual, specification, legal_document
+            - research_paper, whitepaper, case_study
+            - presentation, memo, email, letter, form
+            - technical_spec, api_documentation, user_guide
+            - general_document (for anything else)
             
             Filename: {filename}
             Document sample: {text_sample}
             
             Respond with JSON:
             {{
-                "is_business_relevant": true/false,
-                "category": "saas_contract|vendor_agreement|invoice|procurement|service_agreement|subscription|unsupported",
+                "category": "contract|agreement|invoice|proposal|report|policy|manual|specification|legal_document|research_paper|whitepaper|presentation|memo|email|letter|form|technical_spec|api_documentation|user_guide|general_document",
                 "confidence": 0.0-1.0,
-                "reasoning": "Brief explanation"
+                "reasoning": "Brief explanation of classification"
             }}
             """
             
@@ -236,11 +263,10 @@ class DocumentValidator:
         except Exception as e:
             logger.error(f"AI classification failed: {e}")
             return {
-                "is_business_relevant": False,
-                "category": "unsupported",
-                "confidence": 0.0,
-                "reasoning": f"AI classification error: {str(e)}"
+                "category": "general_document",
+                "confidence": 0.5,
+                "reasoning": f"AI classification error, using fallback: {str(e)}"
             }
 
-# Global validator instance
-document_validator = DocumentValidator()
+# Global classifier instance
+document_classifier = DocumentClassifier()

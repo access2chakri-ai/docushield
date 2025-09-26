@@ -28,12 +28,14 @@ async def ask_question(
         # Import here to avoid circular imports
         from app.agents import agent_orchestrator
         
-        # Process the question
+        # Process the question with document type filtering
         result = await agent_orchestrator.process_query(
             query=request.question,
             user_id=current_user.user_id,
             document_id=request.document_id,
-            conversation_history=request.conversation_history or []
+            conversation_history=request.conversation_history or [],
+            document_types=request.document_types,
+            industry_types=request.industry_types
         )
         
         processing_time = time.time() - start_time
