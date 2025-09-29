@@ -1,6 +1,7 @@
 """
-Base Agent Class
+Base Agent Class - AWS Bedrock AgentCore Compatible
 Provides common functionality for all DocuShield agents with full TiDB integration
+Enterprise-grade architecture designed for AWS Bedrock AgentCore migration
 """
 import json
 import logging
@@ -9,6 +10,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from dataclasses import dataclass
+from enum import Enum
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select, and_, or_
@@ -25,11 +27,28 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+class AgentStatus(Enum):
+    """AWS Bedrock AgentCore compatible agent status"""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    TIMEOUT = "timeout"
+    CANCELLED = "cancelled"
+
+class AgentPriority(Enum):
+    """AWS Bedrock AgentCore compatible priority levels"""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
 @dataclass
 class AgentContext:
-    """Context passed between agents"""
+    """AWS Bedrock AgentCore compatible context passed between agents"""
     contract_id: str
     user_id: str
+    run_id: Optional[str] = None
     query: Optional[str] = None
     previous_results: Dict[str, Any] = None
     metadata: Dict[str, Any] = None
@@ -39,33 +58,118 @@ class AgentContext:
     document_category: Optional[str] = None
     user_description: Optional[str] = None
     external_enrichment: Dict[str, Any] = None
+    # AWS Bedrock AgentCore compatibility fields
+    priority: AgentPriority = AgentPriority.MEDIUM
+    timeout_seconds: int = 60
+    cache_enabled: bool = True
+    session_id: Optional[str] = None
 
 @dataclass
 class AgentResult:
-    """Standardized agent result format"""
+    """AWS Bedrock AgentCore compatible standardized agent result format"""
     agent_name: str
-    success: bool
+    agent_version: str
+    status: AgentStatus
     confidence: float
     findings: List[Dict[str, Any]]
     recommendations: List[str]
-    data_used: Dict[str, Any]  # Track which tables/data were used
     execution_time_ms: float
+    memory_usage_mb: float
     llm_calls: int = 0
+    data_sources: List[str] = None
     error_message: Optional[str] = None
+    # AWS Bedrock AgentCore compatibility fields
+    session_id: Optional[str] = None
+    trace_id: Optional[str] = None
+    
+    @property
+    def success(self) -> bool:
+        """Backward compatibility property"""
+        return self.status == AgentStatus.COMPLETED
 
 class BaseAgent(ABC):
     """
-    Base class for all DocuShield agents
-    Provides common TiDB operations and LLM integration
+    AWS Bedrock AgentCore compatible base class for all DocuShield agents
+    Provides common TiDB operations and LLM integration with enterprise-grade reliability
     """
     
-    def __init__(self, agent_name: str):
+    def __init__(self, agent_name: str, version: str = "1.0.0"):
         self.agent_name = agent_name
+        self.version = version
         self.logger = logging.getLogger(f"agent.{agent_name}")
+        self._cache = {}
+        
+        # AWS Bedrock AgentCore compatibility metadata
+        self.bedrock_metadata = {
+            "agent_type": "document_processing",
+            "framework_version": "docushield_v3",
+            "bedrock_compatible": True,
+            "supported_models": ["claude-3", "gpt-4", "bedrock-titan"],
+            "capabilities": ["analysis", "search", "summarization", "classification"]
+        }
+    
+    async def analyze(self, context: AgentContext) -> AgentResult:
+        """
+        Main analysis method with comprehensive error handling and monitoring
+        AWS Bedrock AgentCore compatible
+        """
+        start_time = datetime.now()
+        memory_start = self._get_memory_usage()
+        
+        try:
+            # Validate context
+            self._validate_context(context)
+            
+            # Check cache if enabled
+            if context.cache_enabled:
+                cached_result = self._get_cached_result(context)
+                if cached_result:
+                    self.logger.info(f"Returning cached result for {self.agent_name}")
+                    return cached_result
+            
+            # Execute analysis with timeout
+            result = await asyncio.wait_for(
+                self._execute_analysis(context),
+                timeout=context.timeout_seconds
+            )
+            
+            # Set execution metrics
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            memory_usage = self._get_memory_usage() - memory_start
+            
+            result.execution_time_ms = execution_time
+            result.memory_usage_mb = memory_usage
+            result.session_id = context.session_id
+            result.trace_id = context.run_id
+            
+            # Cache successful results
+            if context.cache_enabled and result.status == AgentStatus.COMPLETED:
+                self._cache_result(context, result)
+            
+            return result
+            
+        except asyncio.TimeoutError:
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            memory_usage = self._get_memory_usage() - memory_start
+            
+            return self._create_error_result(
+                context, AgentStatus.TIMEOUT, 
+                f"Agent execution timed out after {context.timeout_seconds}s",
+                execution_time, memory_usage
+            )
+            
+        except Exception as e:
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            memory_usage = self._get_memory_usage() - memory_start
+            
+            self.logger.error(f"Agent {self.agent_name} failed: {e}")
+            return self._create_error_result(
+                context, AgentStatus.FAILED, str(e), execution_time, memory_usage
+            )
     
     @abstractmethod
-    async def analyze(self, context: AgentContext) -> AgentResult:
-        """Main analysis method - must be implemented by subclasses"""
+    async def _execute_analysis(self, context: AgentContext) -> AgentResult:
+        """Internal analysis method - must be implemented by subclasses"""
         pass
     
     # =============================================================================
@@ -447,26 +551,110 @@ class BaseAgent(ABC):
     # UTILITY METHODS
     # =============================================================================
     
+    # =============================================================================
+    # HELPER METHODS - AWS Bedrock AgentCore Compatible
+    # =============================================================================
+    
+    def _validate_context(self, context: AgentContext):
+        """Validate agent context"""
+        if not context.contract_id:
+            raise ValueError("contract_id is required")
+        if not context.user_id:
+            raise ValueError("user_id is required")
+    
+    def _get_cache_key(self, context: AgentContext) -> str:
+        """Generate cache key for context"""
+        key_parts = [
+            self.agent_name,
+            context.contract_id,
+            context.query or "no_query",
+            context.document_type or "no_type"
+        ]
+        return "_".join(key_parts)
+    
+    def _get_cached_result(self, context: AgentContext) -> Optional[AgentResult]:
+        """Get cached result if available"""
+        cache_key = self._get_cache_key(context)
+        return self._cache.get(cache_key)
+    
+    def _cache_result(self, context: AgentContext, result: AgentResult):
+        """Cache successful result"""
+        cache_key = self._get_cache_key(context)
+        self._cache[cache_key] = result
+        
+        # Simple cache size management
+        if len(self._cache) > 100:
+            # Remove oldest entries
+            keys_to_remove = list(self._cache.keys())[:20]
+            for key in keys_to_remove:
+                del self._cache[key]
+    
+    def _get_memory_usage(self) -> float:
+        """Get current memory usage in MB"""
+        try:
+            import psutil
+            import os
+            process = psutil.Process(os.getpid())
+            return process.memory_info().rss / 1024 / 1024
+        except:
+            return 0.0
+    
+    def _create_error_result(
+        self, 
+        context: AgentContext, 
+        status: AgentStatus, 
+        error_message: str,
+        execution_time: float,
+        memory_start: float
+    ) -> AgentResult:
+        """Create standardized error result"""
+        return AgentResult(
+            agent_name=self.agent_name,
+            agent_version=self.version,
+            status=status,
+            confidence=0.0,
+            findings=[{
+                "type": "error",
+                "title": f"{self.agent_name} Error",
+                "severity": "high",
+                "confidence": 1.0,
+                "description": error_message
+            }],
+            recommendations=["Manual review required due to agent error"],
+            execution_time_ms=execution_time,
+            memory_usage_mb=memory_start,
+            error_message=error_message,
+            session_id=context.session_id,
+            trace_id=context.run_id
+        )
+    
     def create_result(
         self, 
-        success: bool = True,
+        status: AgentStatus = AgentStatus.COMPLETED,
         confidence: float = 0.8,
         findings: List[Dict[str, Any]] = None,
         recommendations: List[str] = None,
-        data_used: Dict[str, Any] = None,
+        data_sources: List[str] = None,
         execution_time_ms: float = 0.0,
+        memory_usage_mb: float = 0.0,
         llm_calls: int = 0,
-        error_message: str = None
+        error_message: str = None,
+        session_id: str = None,
+        trace_id: str = None
     ) -> AgentResult:
-        """Create standardized agent result"""
+        """Create standardized agent result - AWS Bedrock AgentCore compatible"""
         return AgentResult(
             agent_name=self.agent_name,
-            success=success,
+            agent_version=self.version,
+            status=status,
             confidence=confidence,
             findings=findings or [],
             recommendations=recommendations or [],
-            data_used=data_used or {},
             execution_time_ms=execution_time_ms,
+            memory_usage_mb=memory_usage_mb,
             llm_calls=llm_calls,
-            error_message=error_message
+            data_sources=data_sources or [],
+            error_message=error_message,
+            session_id=session_id,
+            trace_id=trace_id
         )

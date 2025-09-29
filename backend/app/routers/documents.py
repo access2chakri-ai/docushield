@@ -34,6 +34,7 @@ from app.services.document_validator import document_classifier, DocumentCategor
 from app.core.config import settings
 from app.core.security import security_validator, rate_limiter
 from app.routers.document_highlights import document_highlighter
+from app.agents.api_interface import agent_api
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -1100,3 +1101,324 @@ async def process_contract_background(contract_id: str, user_id: str):
                     break  # Prevent infinite loop
         except Exception as db_error:
             logger.error(f"Failed to update contract status: {db_error}")
+
+# =============================================================================
+# AGENT ENDPOINTS - AWS Bedrock AgentCore Compatible
+# =============================================================================
+
+@router.post("/{contract_id}/analyze")
+async def analyze_document(
+    contract_id: str,
+    document_type: Optional[str] = Form(None),
+    priority: str = Form("medium"),
+    timeout_seconds: int = Form(60),
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """
+    Perform comprehensive document analysis using standardized agents
+    AWS Bedrock AgentCore compatible endpoint
+    """
+    try:
+        # Verify document ownership
+        result = await db.execute(
+            select(BronzeContract).where(
+                (BronzeContract.contract_id == contract_id) & 
+                (BronzeContract.owner_user_id == current_user.user_id)
+            )
+        )
+        contract = result.scalar_one_or_none()
+        
+        if not contract:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Rate limiting
+        if not rate_limiter.is_allowed(f"analyze_{current_user.user_id}", max_requests=20, window_seconds=3600):
+            raise HTTPException(
+                status_code=429,
+                detail="Analysis rate limit exceeded. Please try again later."
+            )
+        
+        # Perform analysis using standardized agent API
+        analysis_result = await agent_api.analyze_document(
+            contract_id=contract_id,
+            user_id=current_user.user_id,
+            document_type=document_type,
+            priority=priority,
+            timeout_seconds=timeout_seconds
+        )
+        
+        return {
+            "message": "Document analysis completed",
+            "contract_id": contract_id,
+            "filename": contract.filename,
+            **analysis_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Document analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+@router.post("/{contract_id}/search")
+async def search_document(
+    contract_id: str,
+    query: str = Form(...),
+    timeout_seconds: int = Form(30),
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """
+    Search within a specific document using standardized agents
+    AWS Bedrock AgentCore compatible endpoint
+    """
+    try:
+        # Verify document ownership
+        result = await db.execute(
+            select(BronzeContract).where(
+                (BronzeContract.contract_id == contract_id) & 
+                (BronzeContract.owner_user_id == current_user.user_id)
+            )
+        )
+        contract = result.scalar_one_or_none()
+        
+        if not contract:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Rate limiting
+        if not rate_limiter.is_allowed(f"search_{current_user.user_id}", max_requests=50, window_seconds=3600):
+            raise HTTPException(
+                status_code=429,
+                detail="Search rate limit exceeded. Please try again later."
+            )
+        
+        # Perform search using standardized agent API
+        search_result = await agent_api.search_document(
+            query=query,
+            contract_id=contract_id,
+            user_id=current_user.user_id,
+            timeout_seconds=timeout_seconds
+        )
+        
+        return {
+            "message": "Document search completed",
+            "contract_id": contract_id,
+            "filename": contract.filename,
+            "query": query,
+            **search_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Document search failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+@router.get("/{contract_id}/quick-analyze")
+async def quick_analyze_document(
+    contract_id: str,
+    document_type: Optional[str] = None,
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """
+    Quick document analysis with minimal processing
+    AWS Bedrock AgentCore compatible endpoint
+    """
+    try:
+        # Verify document ownership
+        result = await db.execute(
+            select(BronzeContract).where(
+                (BronzeContract.contract_id == contract_id) & 
+                (BronzeContract.owner_user_id == current_user.user_id)
+            )
+        )
+        contract = result.scalar_one_or_none()
+        
+        if not contract:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Rate limiting
+        if not rate_limiter.is_allowed(f"quick_analyze_{current_user.user_id}", max_requests=30, window_seconds=3600):
+            raise HTTPException(
+                status_code=429,
+                detail="Quick analysis rate limit exceeded. Please try again later."
+            )
+        
+        # Perform quick analysis
+        analysis_result = await agent_api.quick_analysis(
+            contract_id=contract_id,
+            user_id=current_user.user_id,
+            document_type=document_type
+        )
+        
+        return {
+            "message": "Quick analysis completed",
+            "contract_id": contract_id,
+            "filename": contract.filename,
+            **analysis_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Quick analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Quick analysis failed: {str(e)}")
+
+@router.get("/{contract_id}/quick-search")
+async def quick_search_document(
+    contract_id: str,
+    query: str,
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """
+    Quick document search with minimal processing
+    AWS Bedrock AgentCore compatible endpoint
+    """
+    try:
+        # Verify document ownership
+        result = await db.execute(
+            select(BronzeContract).where(
+                (BronzeContract.contract_id == contract_id) & 
+                (BronzeContract.owner_user_id == current_user.user_id)
+            )
+        )
+        contract = result.scalar_one_or_none()
+        
+        if not contract:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Rate limiting
+        if not rate_limiter.is_allowed(f"quick_search_{current_user.user_id}", max_requests=60, window_seconds=3600):
+            raise HTTPException(
+                status_code=429,
+                detail="Quick search rate limit exceeded. Please try again later."
+            )
+        
+        # Perform quick search
+        search_result = await agent_api.quick_search(
+            query=query,
+            contract_id=contract_id,
+            user_id=current_user.user_id
+        )
+        
+        return {
+            "message": "Quick search completed",
+            "contract_id": contract_id,
+            "filename": contract.filename,
+            "query": query,
+            **search_result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Quick search failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Quick search failed: {str(e)}")
+
+@router.get("/agents/status")
+async def get_agent_system_status(
+    current_user = Depends(get_current_active_user)
+):
+    """
+    Get agent system health and status information
+    AWS Bedrock AgentCore compatible endpoint
+    """
+    try:
+        status = agent_api.get_system_status()
+        
+        return {
+            "message": "Agent system status retrieved",
+            **status
+        }
+        
+    except Exception as e:
+        logger.error(f"Agent status check failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Status check failed: {str(e)}")
+
+@router.get("/agents/{agent_type}/info")
+async def get_agent_info(
+    agent_type: str,
+    current_user = Depends(get_current_active_user)
+):
+    """
+    Get information about a specific agent type
+    AWS Bedrock AgentCore compatible endpoint
+    """
+    try:
+        agent_info = agent_api.get_agent_info(agent_type)
+        
+        return {
+            "message": f"Agent information for {agent_type}",
+            "agent_type": agent_type,
+            **agent_info
+        }
+        
+    except Exception as e:
+        logger.error(f"Agent info retrieval failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Agent info failed: {str(e)}")
+
+@router.post("/{contract_id}/test-analysis")
+async def test_document_analysis(
+    contract_id: str,
+    current_user = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """
+    Test endpoint to trigger document analysis and check if findings are saved
+    """
+    try:
+        # Verify document ownership
+        result = await db.execute(
+            select(BronzeContract).where(
+                (BronzeContract.contract_id == contract_id) & 
+                (BronzeContract.owner_user_id == current_user.user_id)
+            )
+        )
+        contract = result.scalar_one_or_none()
+        
+        if not contract:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Trigger the multi-agent analysis step directly
+        from app.services.document_processor import document_processor
+        
+        analysis_result = await document_processor._step_multi_agent_analysis(
+            contract_id=contract_id,
+            user_id=current_user.user_id,
+            db=db
+        )
+        
+        # Check what was actually saved
+        findings_result = await db.execute(
+            select(GoldFinding).where(GoldFinding.contract_id == contract_id)
+        )
+        findings = findings_result.scalars().all()
+        
+        score_result = await db.execute(
+            select(GoldContractScore).where(GoldContractScore.contract_id == contract_id)
+        )
+        score = score_result.scalar_one_or_none()
+        
+        return {
+            "message": "Test analysis completed",
+            "contract_id": contract_id,
+            "analysis_result": analysis_result,
+            "findings_in_db": len(findings),
+            "score_in_db": score.overall_score if score else None,
+            "findings_sample": [
+                {
+                    "type": f.finding_type,
+                    "severity": f.severity,
+                    "title": f.title,
+                    "confidence": f.confidence
+                }
+                for f in findings[:3]
+            ] if findings else []
+        }
+        
+    except Exception as e:
+        logger.error(f"Test analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Test analysis failed: {str(e)}")
