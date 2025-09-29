@@ -529,29 +529,124 @@ class DocumentProcessor:
         
         logger.info(f"Found contract text for {contract_id}, starting agent orchestrator")
         
-        # Run multi-agent analysis using new orchestrator (with error handling)
+        # Run multi-agent analysis using the agent system
+        workflow_result = None
+        
         try:
-            logger.info(f"Calling agent orchestrator for contract {contract_id}")
-            workflow_result = await agent_orchestrator.run_comprehensive_analysis(
-                contract_id=contract_id,
-                user_id=user_id,
-                query="Perform comprehensive document analysis including risk assessment, clause extraction, and business recommendations",
-                selected_agents=["simple_analyzer", "search_agent", "clause_analyzer"],  # USE ALL AGENTS
-                timeout_seconds=300  # Longer timeout for full analysis
-            )
-            logger.info(f"Agent orchestrator completed for contract {contract_id}")
+            if agent_orchestrator is not None:
+                logger.info(f"Calling agent orchestrator for contract {contract_id}")
+                workflow_result = await agent_orchestrator.run_comprehensive_analysis(
+                    contract_id=contract_id,
+                    user_id=user_id,
+                    query="Perform comprehensive document analysis including risk assessment, clause extraction, and business recommendations",
+                    timeout_seconds=120  # 2 minute timeout
+                )
+                logger.info(f"Agent orchestrator completed for contract {contract_id}")
+            else:
+                logger.warning("Agent orchestrator not available, using all agents directly")
+                # Use all available agents directly
+                from app.agents import agent_factory
+                from app.agents.base_agent import AgentContext, AgentPriority
+                
+                # Create context for all agents
+                context = AgentContext(
+                    contract_id=contract_id,
+                    user_id=user_id,
+                    query="Comprehensive document analysis",
+                    priority=AgentPriority.HIGH,
+                    timeout_seconds=60
+                )
+                
+                all_findings = []
+                all_recommendations = []
+                all_agent_results = []
+                total_execution_time = 0.0
+                
+                # Call all available agents
+                agent_names = ['document_analyzer', 'search_agent', 'clause_analyzer', 'risk_analyzer']
+                
+                for agent_name in agent_names:
+                    try:
+                        logger.info(f"Attempting to get agent: {agent_name}")
+                        agent = agent_factory.get_agent(agent_name)
+                        if agent:
+                            logger.info(f"✅ Got agent {agent_name}: {type(agent).__name__}")
+                            logger.info(f"Running {agent_name} for contract {contract_id}")
+                            agent_result = await agent.analyze(context)
+                            
+                            if agent_result.success:
+                                findings_count = len(agent_result.findings)
+                                recommendations_count = len(agent_result.recommendations)
+                                all_findings.extend(agent_result.findings)
+                                all_recommendations.extend(agent_result.recommendations)
+                                all_agent_results.append(agent_result)
+                                total_execution_time += agent_result.execution_time_ms
+                                
+                                logger.info(f"✅ {agent_name} completed successfully:")
+                                logger.info(f"   - Findings: {findings_count}")
+                                logger.info(f"   - Recommendations: {recommendations_count}")
+                                logger.info(f"   - Confidence: {agent_result.confidence}")
+                                logger.info(f"   - Execution time: {agent_result.execution_time_ms}ms")
+                                
+                                # Log first few findings for debugging
+                                for i, finding in enumerate(agent_result.findings[:3]):
+                                    logger.info(f"   - Finding {i+1}: {finding.get('title', 'No title')} ({finding.get('severity', 'unknown')})")
+                            else:
+                                logger.warning(f"⚠️ {agent_name} failed: {agent_result.error_message}")
+                        else:
+                            logger.warning(f"⚠️ {agent_name} not available from factory")
+                            # Log available agents for debugging
+                            available = agent_factory.get_available_agent_names()
+                            logger.warning(f"Available agents: {available}")
+                    except Exception as e:
+                        logger.error(f"❌ {agent_name} error: {e}")
+                        import traceback
+                        logger.error(f"Traceback: {traceback.format_exc()}")
+                
+                if all_agent_results:
+                    # Calculate overall confidence
+                    avg_confidence = sum(r.confidence for r in all_agent_results) / len(all_agent_results)
+                    
+                    # Convert to expected format
+                    workflow_result = type('OrchestrationResult', (), {
+                        'run_id': f"multi_direct_{contract_id}",
+                        'contract_id': contract_id,
+                        'user_id': user_id,
+                        'query': context.query,
+                        'success': True,
+                        'overall_confidence': avg_confidence,
+                        'consolidated_findings': all_findings,
+                        'consolidated_recommendations': list(set(all_recommendations)),  # Remove duplicates
+                        'execution_time_ms': total_execution_time,
+                        'agent_results': all_agent_results,
+                        'workflow_version': "multi_direct_2.0.0"
+                    })()
+                    
+                    logger.info(f"🎯 Multi-agent direct analysis completed for contract {contract_id}:")
+                    logger.info(f"   - Total findings: {len(all_findings)}")
+                    logger.info(f"   - Total recommendations: {len(all_recommendations)}")
+                    logger.info(f"   - Successful agents: {len(all_agent_results)}")
+                    logger.info(f"   - Total execution time: {total_execution_time}ms")
+                    logger.info(f"   - Average confidence: {avg_confidence}")
+                    
+                    # Log breakdown by agent
+                    for result in all_agent_results:
+                        logger.info(f"   - {result.agent_name}: {len(result.findings)} findings, {result.confidence} confidence")
+                else:
+                    raise Exception("No agents were able to complete analysis")
+                    
         except Exception as agent_error:
-            logger.error(f"Agent orchestrator failed: {agent_error}")
+            logger.error(f"Agent analysis failed: {agent_error}")
             # Create a fallback result structure
-            workflow_result = OrchestrationResult(
-                run_id=f"fallback_{contract_id}",
-                contract_id=contract_id,
-                user_id=user_id,
-                query=None,
-                overall_success=False,
-                overall_confidence=0.5,
-                agent_results=[],
-                consolidated_findings=[{
+            workflow_result = type('OrchestrationResult', (), {
+                'run_id': f"fallback_{contract_id}",
+                'contract_id': contract_id,
+                'user_id': user_id,
+                'query': None,
+                'success': False,
+                'overall_confidence': 0.5,
+                'agent_results': [],
+                'consolidated_findings': [{
                     "type": "processing_error",
                     "title": "Agent analysis temporarily unavailable",
                     "description": f"Multi-agent analysis failed: {str(agent_error)}",
@@ -559,15 +654,20 @@ class DocumentProcessor:
                     "confidence": 0.5,
                     "source_agent": "fallback"
                 }],
-                consolidated_recommendations=["Manual review recommended due to agent system error"],
-                execution_time_ms=0.0,
-                total_llm_calls=0,
-                workflow_version="fallback_2.0.0"
-            )
+                'consolidated_recommendations': ["Manual review recommended due to agent system error"],
+                'execution_time_ms': 0.0,
+                'workflow_version': "fallback_2.0.0"
+            })()
         
         # Store consolidated findings as GoldFindings
         findings_created = 0
-        for finding in workflow_result.consolidated_findings[:10]:  # Limit to top 10
+        findings_to_save = getattr(workflow_result, 'consolidated_findings', [])
+        
+        logger.info(f"💾 Saving findings to database:")
+        logger.info(f"   - Total findings from agents: {len(findings_to_save)}")
+        logger.info(f"   - Limiting to top 10 findings")
+        
+        for finding in findings_to_save[:10]:  # Limit to top 10
             try:
                 gold_finding = GoldFinding(
                     contract_id=contract_id,
@@ -575,14 +675,16 @@ class DocumentProcessor:
                     severity=finding.get("severity", "medium"),
                     title=finding.get("title", "Agent finding")[:200],
                     description=finding.get("description", json.dumps(finding)),
-                    confidence=finding.get("confidence", workflow_result.overall_confidence),
+                    confidence=finding.get("confidence", getattr(workflow_result, 'overall_confidence', 0.5)),
                     detection_method=finding.get("source_agent", "orchestrator"),
-                    model_version=workflow_result.workflow_version
+                    model_version=getattr(workflow_result, 'workflow_version', "2.0.0")
                 )
                 db.add(gold_finding)
                 findings_created += 1
             except Exception as e:
                 logger.warning(f"Failed to save agent finding: {e}")
+        
+        logger.info(f"💾 Successfully saved {findings_created} findings to database")
         
         # Store or update contract score (simplified for now)
         result = await db.execute(
@@ -591,13 +693,14 @@ class DocumentProcessor:
         existing_score = result.scalar_one_or_none()
         
         # Calculate risk score based on findings
-        risk_score = min(100, max(0, int(workflow_result.overall_confidence * 100)))
-        risk_level = "high" if workflow_result.overall_confidence > 0.8 else "medium" if workflow_result.overall_confidence > 0.5 else "low"
+        confidence = getattr(workflow_result, 'overall_confidence', 0.5)
+        risk_score = min(100, max(0, int(confidence * 100)))
+        risk_level = "high" if confidence > 0.8 else "medium" if confidence > 0.5 else "low"
         
         if existing_score:
             existing_score.overall_score = risk_score
             existing_score.risk_level = risk_level
-            existing_score.confidence = workflow_result.overall_confidence
+            existing_score.confidence = confidence
             existing_score.last_updated = datetime.utcnow()
         else:
             score = GoldContractScore(
@@ -605,23 +708,26 @@ class DocumentProcessor:
                 overall_score=risk_score,
                 risk_level=risk_level,
                 category_scores={},  # Could be populated from specific risk analysis
-                scoring_model_version=workflow_result.workflow_version,
-                confidence=workflow_result.overall_confidence
+                scoring_model_version=getattr(workflow_result, 'workflow_version', "2.0.0"),
+                confidence=confidence
             )
             db.add(score)
         
         # Create executive summary from consolidated recommendations
-        summary_content = f"Comprehensive analysis completed using {len(workflow_result.agent_results)} specialized agents. " + \
-                         " ".join(workflow_result.consolidated_recommendations[:3])
+        agent_results = getattr(workflow_result, 'agent_results', [])
+        recommendations = getattr(workflow_result, 'consolidated_recommendations', [])
+        
+        summary_content = f"Comprehensive analysis completed using {len(agent_results)} specialized agents. " + \
+                         " ".join(recommendations[:3])
         
         summary = GoldSummary(
             contract_id=contract_id,
             summary_type="agent_orchestrator",
             title="Agent Orchestrator Summary",
             content=summary_content,
-            key_points=workflow_result.consolidated_recommendations[:5],
+            key_points=recommendations[:5],
             word_count=len(summary_content.split()),
-            model_version=workflow_result.workflow_version
+            model_version=getattr(workflow_result, 'workflow_version', "2.0.0")
         )
         db.add(summary)
         
@@ -631,11 +737,11 @@ class DocumentProcessor:
             "status": "completed",
             "overall_risk_score": risk_score,
             "risk_level": risk_level,
-            "confidence": workflow_result.overall_confidence,
+            "confidence": confidence,
             "findings_created": findings_created,
-            "execution_time_ms": workflow_result.execution_time_ms,
-            "agents_used": len(workflow_result.agent_results),
-            "run_id": workflow_result.run_id
+            "execution_time_ms": getattr(workflow_result, 'execution_time_ms', 0.0),
+            "agents_used": len(agent_results),
+            "run_id": getattr(workflow_result, 'run_id', f"processed_{contract_id}")
         }
     
     async def _step_extract_clauses(self, contract_id: str, user_id: str, db: AsyncSession) -> Dict[str, Any]:
