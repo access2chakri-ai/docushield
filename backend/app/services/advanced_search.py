@@ -2,6 +2,7 @@
 Advanced Hybrid Search Service for DocuShield
 Combines semantic (vector) + keyword (full-text) search with intelligent query parsing
 Supports complex queries like "Find contracts with auto-renewal clauses" and "Show invoices above $50k missing PO reference"
+Now integrated with Agent Factory for consistent agent-based processing
 """
 import json
 import re
@@ -155,6 +156,7 @@ class AdvancedSearchService:
     ) -> SearchResponse:
         """
         Main search interface with intelligent query parsing and hybrid search
+        Now uses Agent Factory for consistent agent-based processing
         """
         start_time = datetime.now()
         
@@ -168,8 +170,8 @@ class AdvancedSearchService:
             if industry_types:
                 parsed_query.industry_types = industry_types
             
-            # Execute search based on parsed intent
-            results = await self._execute_search(parsed_query, user_id, limit)
+            # Use agent-based search for all queries
+            results = await self._execute_agent_search(parsed_query, user_id, limit)
             
             # Calculate search time
             search_time = (datetime.now() - start_time).total_seconds() * 1000
@@ -286,6 +288,138 @@ class AdvancedSearchService:
             keywords=keywords,
             structured_conditions=structured_conditions
         )
+    
+    def _should_use_search_agent(self, query: SearchQuery) -> bool:
+        """
+        Determine if the query should use the search agent
+        The search agent can handle all types of queries including complex ones
+        """
+        # Always use search agent - it's more capable than legacy search
+        return True
+    
+    async def _execute_agent_search(self, query: SearchQuery, user_id: str, limit: int) -> List[SearchResult]:
+        """
+        Execute search using the agent factory's search agent
+        """
+        try:
+            # Import here to avoid circular imports
+            from app.agents.agent_factory import agent_factory, AgentContext
+            
+            # Get the search agent from the factory
+            search_agent = agent_factory.get_document_search_agent()
+            if not search_agent:
+                logger.warning("Search agent not available, falling back to legacy search")
+                return await self._execute_search(query, user_id, limit)
+            
+            # Get user's documents to search through
+            async for db in get_operational_db():
+                # Get all user documents for multi-document search
+                documents_query = select(BronzeContract).where(
+                    BronzeContract.owner_user_id == user_id
+                ).limit(50)  # Limit to prevent overwhelming the agent
+                
+                result = await db.execute(documents_query)
+                contracts = result.scalars().all()
+                
+                if not contracts:
+                    return []
+                
+                # Execute search for each document and aggregate results
+                all_results = []
+                
+                for contract in contracts:
+                    try:
+                        # Create enhanced query that includes structured conditions
+                        enhanced_query = self._create_enhanced_query(query)
+                        
+                        # Create agent context for this document
+                        context = AgentContext(
+                            contract_id=contract.contract_id,
+                            user_id=user_id,
+                            query=enhanced_query
+                        )
+                        
+                        # Execute agent search
+                        agent_result = await search_agent.analyze(context)
+                        
+                        if agent_result.status == "COMPLETED" and agent_result.findings:
+                            # Convert agent findings to SearchResult format
+                            for finding in agent_result.findings:
+                                search_result = SearchResult(
+                                    document_id=contract.contract_id,
+                                    title=contract.filename,
+                                    document_type=self._determine_document_type(contract.filename),
+                                    content_snippet=finding.get("content", "")[:300],
+                                    relevance_score=finding.get("confidence", 0.5),
+                                    match_type=finding.get("type", "agent_search"),
+                                    highlights=[finding.get("title", "")],
+                                    metadata={
+                                        "agent_finding": True,
+                                        "finding_type": finding.get("type"),
+                                        "line_number": finding.get("line_number"),
+                                        "similarity_score": finding.get("similarity_score"),
+                                        "chunk_order": finding.get("chunk_order"),
+                                        "created_at": contract.created_at.isoformat() if contract.created_at else None
+                                    }
+                                )
+                                all_results.append(search_result)
+                    
+                    except Exception as e:
+                        logger.warning(f"Agent search failed for contract {contract.contract_id}: {e}")
+                        continue
+                
+                # Sort by relevance and return top results
+                all_results.sort(key=lambda x: x.relevance_score, reverse=True)
+                return all_results[:limit]
+                
+        except Exception as e:
+            logger.error(f"Agent search execution failed: {e}")
+            # Fallback to legacy search
+            return await self._execute_search(query, user_id, limit)
+    
+    def _create_enhanced_query(self, query: SearchQuery) -> str:
+        """
+        Create an enhanced query that includes structured conditions for the agent
+        This allows the agent to understand complex requirements like amounts and missing references
+        """
+        enhanced_parts = [query.semantic_query or query.original_query]
+        
+        # Add structured conditions as natural language
+        if query.structured_conditions.get("min_amount"):
+            amount = query.structured_conditions["min_amount"]
+            enhanced_parts.append(f"with amounts above ${amount:,.2f}")
+        
+        if query.structured_conditions.get("missing_po"):
+            enhanced_parts.append("that are missing purchase order references")
+        
+        if query.structured_conditions.get("missing_reference"):
+            enhanced_parts.append("that are missing reference numbers")
+        
+        if query.structured_conditions.get("clause_type"):
+            clause_type = query.structured_conditions["clause_type"]
+            enhanced_parts.append(f"containing {clause_type.replace('_', ' ')} clauses")
+        
+        # Add document type filters
+        if query.filters.get("document_type"):
+            doc_type = query.filters["document_type"]
+            enhanced_parts.append(f"in {doc_type} documents")
+        
+        return " ".join(enhanced_parts)
+    
+    def _determine_document_type(self, filename: str) -> str:
+        """Determine document type from filename"""
+        filename_lower = filename.lower()
+        
+        if any(term in filename_lower for term in ["contract", "agreement", "terms"]):
+            return "contract"
+        elif any(term in filename_lower for term in ["invoice", "bill", "receipt"]):
+            return "invoice"
+        elif any(term in filename_lower for term in ["policy", "procedure"]):
+            return "policy"
+        elif any(term in filename_lower for term in ["report", "analysis"]):
+            return "report"
+        else:
+            return "document"
     
     async def _execute_search(self, query: SearchQuery, user_id: str, limit: int) -> List[SearchResult]:
         """
