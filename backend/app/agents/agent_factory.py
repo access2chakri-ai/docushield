@@ -13,6 +13,8 @@ from enum import Enum
 from dataclasses import dataclass
 
 from app.services.remote_agent import call_agent
+from app.services.agentcore import _invoke_agentcore_sync
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +119,44 @@ class RemoteDocumentSearchAgent(BaseAgent):
                 error_message=f"Remote agent error: {str(e)}"
             )
 
+class AgentCoreDocumentSearchAgent(BaseAgent):
+    """Wrapper that invokes an AgentCore Runtime agent by ARN."""
+    
+    def __init__(self):
+        super().__init__("document_search_agentcore", "1.0.0")
+
+    async def _execute_analysis(self, context: AgentContext):
+        try:
+            # Shape the prompt/payload your AgentCore expects.
+            # You can pass any JSON your runtime handler understands.
+            payload = {
+                "query": context.query,
+                "contract_id": context.contract_id,
+                "user_id": context.user_id,
+                "top_k": getattr(context, "top_k", 5),
+            }
+            # Because boto3 is sync, offload to a thread to avoid blocking the event loop
+            import asyncio
+            result = await asyncio.to_thread(
+                _invoke_agentcore_sync, payload, getattr(context, "session_id", None)
+            )
+
+            # Map generic response to your AgentResult
+            if isinstance(result, dict) and result.get("error"):
+                return self.create_result(status=AgentStatus.FAILED, error_message=result["error"])
+
+            return self.create_result(
+                status=AgentStatus.COMPLETED,
+                confidence=float(result.get("confidence", 0.0)),
+                findings=result.get("findings", []),
+                recommendations=result.get("recommendations", []),
+                llm_calls=int(result.get("llm_calls", 0)),
+                data_sources=result.get("data_sources", []),
+            )
+        except Exception as e:
+            logger.exception("AgentCore invocation failed")
+            return self.create_result(status=AgentStatus.FAILED, error_message=str(e))
+
 class AgentType(Enum):
     """AWS Bedrock AgentCore compatible agent types"""
     DOCUMENT_ANALYSIS = "document_analysis_agent"
@@ -165,30 +205,26 @@ class AgentFactory:
             logger.error(f"❌ Document Analysis Agent failed: {e}")
         
         try:
-            if USE_REMOTE:
+            if settings.use_bedrock_agentcore:
+                search_agent = AgentCoreDocumentSearchAgent()
+                logger.info("✅ AgentCore Document Search Agent initialized")
+            elif USE_REMOTE:
                 search_agent = RemoteDocumentSearchAgent()
                 logger.info("✅ Remote Document Search Agent initialized")
-                self._agents.update({
-                    AgentType.DOCUMENT_SEARCH.value: search_agent,
-                    'search_agent': search_agent,
-                })
             else:
                 try:
                     from .search_agent import DocumentSearchAgent
                     search_agent = DocumentSearchAgent()
                     logger.info("✅ Local Document Search Agent initialized")
-                    self._agents.update({
-                        AgentType.DOCUMENT_SEARCH.value: search_agent,
-                        'search_agent': search_agent,
-                    })
                 except ImportError as ie:
                     logger.warning(f"Local search agent import failed: {ie}, falling back to remote")
                     search_agent = RemoteDocumentSearchAgent()
                     logger.info("✅ Remote Document Search Agent initialized (fallback)")
-                    self._agents.update({
-                        AgentType.DOCUMENT_SEARCH.value: search_agent,
-                        'search_agent': search_agent,
-                    })
+            
+            self._agents.update({
+                AgentType.DOCUMENT_SEARCH.value: search_agent,
+                'search_agent': search_agent,
+            })
         except Exception as e:
             logger.error(f"❌ Document Search Agent failed: {e}")
         

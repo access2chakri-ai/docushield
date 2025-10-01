@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     aws_session_token: str = os.getenv("AWS_SESSION_TOKEN", "")  # Optional for temporary credentials
     aws_default_region: str = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
     
+    # AgentCore
+    use_bedrock_agentcore: bool = os.getenv("USE_BEDROCK_AGENTCORE", "false").lower() == "true"
+    agentcore_runtime_arn: str = os.getenv("AGENTCORE_RUNTIME_ARN", "")
+    agentcore_session_prefix: str = os.getenv("AGENTCORE_SESSION_PREFIX", "docushield")
+    agentcore_timeout: float = float(os.getenv("AGENTCORE_TIMEOUT", "60"))
+    
     # LLM Factory settings
     default_llm_provider: str = os.getenv("DEFAULT_LLM_PROVIDER", "bedrock")
     default_embedding_provider: str = os.getenv("DEFAULT_EMBEDDING_PROVIDER", "bedrock")
