@@ -2,6 +2,9 @@
 Enhanced configuration for DocuShield Digital Twin Document Intelligence
 Supports both .env files (local development) and AWS environment variables (production)
 """
+# Import early_config first to ensure secrets are loaded from AWS Secrets Manager
+import early_config
+
 import os
 from typing import Optional
 from pydantic_settings import BaseSettings
