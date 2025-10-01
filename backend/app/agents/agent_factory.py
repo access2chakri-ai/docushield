@@ -3,6 +3,9 @@ Production Agent Factory - AWS Bedrock AgentCore Compatible
 Centralized agent management with singleton pattern and standardized naming
 Enterprise-grade architecture for agent lifecycle management
 """
+# Import early_config first to ensure secrets are loaded from AWS Secrets Manager
+import early_config
+
 import os
 import logging
 from typing import Dict, Optional, Type, List, Any
@@ -88,7 +91,7 @@ class RemoteDocumentSearchAgent(BaseAgent):
             }
             
             # Call remote agent
-            data = call_agent("document-search", payload)
+            data = await call_agent("document-search", payload)
             
             # Map remote JSON back to AgentResult
             status_str = str(data.get("status", "")).upper()

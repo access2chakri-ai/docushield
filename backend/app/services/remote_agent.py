@@ -2,6 +2,9 @@
 Remote Agent HTTP Client
 Handles communication with Dockerized agents via HTTP
 """
+# Import early_config first to ensure secrets are loaded from AWS Secrets Manager
+import early_config
+
 import os
 import json
 import httpx
@@ -13,7 +16,7 @@ logger = logging.getLogger(__name__)
 ENDPOINTS = json.loads(os.getenv("REMOTE_AGENT_ENDPOINTS", "{}"))
 TIMEOUT = float(os.getenv("REMOTE_AGENT_TIMEOUT", "45"))
 
-def call_agent(name: str, payload: dict) -> dict:
+async def call_agent(name: str, payload: dict) -> dict:
     """
     Call a remote agent via HTTP
     
@@ -37,8 +40,8 @@ def call_agent(name: str, payload: dict) -> dict:
     logger.info(f"Calling remote agent '{name}' at {url}")
     
     try:
-        with httpx.Client(timeout=TIMEOUT) as client:
-            r = client.post(url, json=payload, headers=headers)
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            r = await client.post(url, json=payload, headers=headers)
             r.raise_for_status()
             result = r.json()
             logger.info(f"Remote agent '{name}' responded successfully")
