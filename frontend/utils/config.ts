@@ -5,7 +5,7 @@
 export const config = {
   // API Configuration
   apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000',
-  apiTimeout: parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT || '10000'),
+  apiTimeout: parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT || '120000'),
   
   // Feature flags
   enableAnalytics: process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === 'true',

@@ -3,13 +3,119 @@ Production Agent Factory - AWS Bedrock AgentCore Compatible
 Centralized agent management with singleton pattern and standardized naming
 Enterprise-grade architecture for agent lifecycle management
 """
+# Import early_config first to ensure secrets are loaded from AWS Secrets Manager
+import early_config
+
+import os
 import logging
 from typing import Dict, Optional, Type, List, Any
 from enum import Enum
+from dataclasses import dataclass
 
-from .base_agent import BaseAgent, AgentStatus, AgentPriority
+from app.services.remote_agent import call_agent
 
 logger = logging.getLogger(__name__)
+
+# Configuration for remote agents
+USE_REMOTE = os.getenv("USE_REMOTE_AGENTS", "").lower() == "true"
+
+# Minimal base classes for remote agent wrapper
+class AgentStatus:
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+class AgentPriority:
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+@dataclass
+class AgentContext:
+    contract_id: str
+    user_id: str
+    query: Optional[str] = None
+    run_id: Optional[str] = None
+    session_id: Optional[str] = None
+
+@dataclass
+class AgentResult:
+    status: str
+    confidence: float
+    findings: List[Dict[str, Any]]
+    recommendations: List[str]
+    llm_calls: int = 0
+    data_sources: List[str] = None
+    error_message: Optional[str] = None
+
+class BaseAgent:
+    def __init__(self, agent_name: str, version: str = "1.0.0"):
+        self.agent_name = agent_name
+        self.version = version
+    
+    def create_result(self, status=AgentStatus.COMPLETED, confidence=0.8, findings=None, 
+                     recommendations=None, llm_calls=0, data_sources=None, error_message=None):
+        return AgentResult(
+            status=status,
+            confidence=confidence,
+            findings=findings or [],
+            recommendations=recommendations or [],
+            llm_calls=llm_calls,
+            data_sources=data_sources or [],
+            error_message=error_message
+        )
+    
+    async def analyze(self, context):
+        return await self._execute_analysis(context)
+    
+    async def _execute_analysis(self, context):
+        raise NotImplementedError
+
+class RemoteDocumentSearchAgent(BaseAgent):
+    """Remote wrapper for DocumentSearchAgent that calls Dockerized agent via HTTP"""
+    
+    def __init__(self):
+        super().__init__("document_search_agent_remote", "2.0.0")
+    
+    async def _execute_analysis(self, context: AgentContext):
+        """Execute analysis by calling remote agent via HTTP"""
+        try:
+            payload = {
+                "inputs": {
+                    "query": context.query,
+                    "contract_id": context.contract_id,
+                    "user_id": context.user_id,
+                    "top_k": getattr(context, "top_k", 5)
+                },
+                "session_id": getattr(context, "session_id", None),
+                "request_id": getattr(context, "run_id", None)
+            }
+            
+            # Call remote agent
+            data = await call_agent("document-search", payload)
+            
+            # Map remote JSON back to AgentResult
+            status_str = str(data.get("status", "")).upper()
+            if status_str == "FAILED":
+                return self.create_result(
+                    status=AgentStatus.FAILED, 
+                    error_message=data.get("error_message", "Remote agent failed")
+                )
+            
+            return self.create_result(
+                status=AgentStatus.COMPLETED,
+                confidence=data.get("confidence", 0.0),
+                findings=data.get("findings", []),
+                recommendations=data.get("recommendations", []),
+                llm_calls=data.get("llm_calls", 0),
+                data_sources=data.get("data_sources", [])
+            )
+            
+        except Exception as e:
+            logger.error(f"Remote agent call failed: {e}")
+            return self.create_result(
+                status=AgentStatus.FAILED,
+                error_message=f"Remote agent error: {str(e)}"
+            )
 
 class AgentType(Enum):
     """AWS Bedrock AgentCore compatible agent types"""
@@ -42,6 +148,7 @@ class AgentFactory:
     def _initialize_agents(self):
         """Initialize existing agents only"""
         self._agents = {}
+        logger.info(f"🔧 Agent Factory: USE_REMOTE_AGENTS = {USE_REMOTE}")
         
         # Try to initialize each agent individually
         try:
@@ -58,13 +165,30 @@ class AgentFactory:
             logger.error(f"❌ Document Analysis Agent failed: {e}")
         
         try:
-            from .search_agent import DocumentSearchAgent
-            search_agent = DocumentSearchAgent()
-            self._agents.update({
-                AgentType.DOCUMENT_SEARCH.value: search_agent,
-                'search_agent': search_agent,
-            })
-            logger.info("✅ Document Search Agent initialized")
+            if USE_REMOTE:
+                search_agent = RemoteDocumentSearchAgent()
+                logger.info("✅ Remote Document Search Agent initialized")
+                self._agents.update({
+                    AgentType.DOCUMENT_SEARCH.value: search_agent,
+                    'search_agent': search_agent,
+                })
+            else:
+                try:
+                    from .search_agent import DocumentSearchAgent
+                    search_agent = DocumentSearchAgent()
+                    logger.info("✅ Local Document Search Agent initialized")
+                    self._agents.update({
+                        AgentType.DOCUMENT_SEARCH.value: search_agent,
+                        'search_agent': search_agent,
+                    })
+                except ImportError as ie:
+                    logger.warning(f"Local search agent import failed: {ie}, falling back to remote")
+                    search_agent = RemoteDocumentSearchAgent()
+                    logger.info("✅ Remote Document Search Agent initialized (fallback)")
+                    self._agents.update({
+                        AgentType.DOCUMENT_SEARCH.value: search_agent,
+                        'search_agent': search_agent,
+                    })
         except Exception as e:
             logger.error(f"❌ Document Search Agent failed: {e}")
         
@@ -307,6 +431,10 @@ class AgentFactory:
         except Exception as e:
             logger.error(f"Quick search failed: {e}")
             return {"success": False, "error": str(e)}
+    
+    def get_document_search_agent(self):
+        """Get document search agent (local or remote based on configuration)"""
+        return self.get_agent(AgentType.DOCUMENT_SEARCH)
     
     def get_orchestrator(self):
         """Get the document orchestrator instance"""
