@@ -31,8 +31,8 @@ USER agent
 # Expose port for HTTP API
 EXPOSE 8080
 
-# Default command runs the HTTP wrapper
-CMD ["python", "runtime_http/app.py"]
+# Default command runs the HTTP wrapper with uvicorn
+CMD ["uvicorn", "runtime_http.app:app", "--host", "0.0.0.0", "--port", "8080"]
 
 # Health check via HTTP endpoint
 HEALTHCHECK --interval=60s --timeout=5s --start-period=90s --retries=3 \
