@@ -68,7 +68,9 @@ class Settings(BaseSettings):
     
     # AgentCore
     use_bedrock_agentcore: bool = os.getenv("USE_BEDROCK_AGENTCORE", "false").lower() == "true"
-    agentcore_runtime_arn: str = os.getenv("AGENTCORE_RUNTIME_ARN", "")
+    agentcore_runtime_arn: str = os.getenv("AGENTCORE_RUNTIME_ARN", "")  # Legacy support
+    agentcore_runtime_arn_search: str = os.getenv("AGENTCORE_RUNTIME_ARN_SEARCH", "")
+    agentcore_runtime_arn_analysis: str = os.getenv("AGENTCORE_RUNTIME_ARN_ANALYSIS", "")
     agentcore_session_prefix: str = os.getenv("AGENTCORE_SESSION_PREFIX", "docushield")
     agentcore_timeout: float = float(os.getenv("AGENTCORE_TIMEOUT", "60"))
     

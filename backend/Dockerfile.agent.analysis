@@ -1,0 +1,44 @@
+# AWS Bedrock Agent Document Analysis Runtime Dockerfile
+# Production-ready container for document analysis agent
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Set Python path
+ENV PYTHONPATH=/app
+ENV PORT=8081
+
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash agent
+RUN chown -R agent:agent /app
+USER agent
+
+# Expose port for HTTP API
+EXPOSE 8081
+
+# Default command runs the HTTP wrapper with uvicorn
+CMD ["uvicorn", "runtime_http.analysis_app:app", "--host", "0.0.0.0", "--port", "8081"]
+
+# Health check via HTTP endpoint
+HEALTHCHECK --interval=60s --timeout=5s --start-period=90s --retries=3 \
+  CMD python -c "import urllib.request,sys; r=urllib.request.urlopen('http://localhost:8081/ping',timeout=5); sys.exit(0 if 200 <= r.status < 300 else 1)" || exit 1
+
+# Labels for AWS Bedrock Agent compatibility
+LABEL com.aws.bedrock.agent.runtime="document-analysis"
+LABEL com.aws.bedrock.agent.version="3.0.0"
+LABEL maintainer="DocuShield Team"

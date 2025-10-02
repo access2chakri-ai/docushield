@@ -48,6 +48,9 @@ class AgentResult:
     llm_calls: int = 0
     data_sources: List[str] = None
     error_message: Optional[str] = None
+    agent_name: Optional[str] = None
+    agent_version: Optional[str] = None
+    execution_time_ms: float = 0.0
 
 class BaseAgent:
     def __init__(self, agent_name: str, version: str = "1.0.0"):
@@ -63,7 +66,10 @@ class BaseAgent:
             recommendations=recommendations or [],
             llm_calls=llm_calls,
             data_sources=data_sources or [],
-            error_message=error_message
+            error_message=error_message,
+            agent_name=self.agent_name,
+            agent_version=self.version,
+            execution_time_ms=0.0
         )
     
     async def analyze(self, context):
@@ -119,6 +125,54 @@ class RemoteDocumentSearchAgent(BaseAgent):
                 error_message=f"Remote agent error: {str(e)}"
             )
 
+class RemoteDocumentAnalysisAgent(BaseAgent):
+    """Remote wrapper for DocumentAnalysisAgent that calls Dockerized agent via HTTP"""
+    
+    def __init__(self):
+        super().__init__("document_analysis_agent_remote", "3.0.0")
+    
+    async def _execute_analysis(self, context: AgentContext):
+        """Execute analysis by calling remote agent via HTTP"""
+        try:
+            payload = {
+                "inputs": {
+                    "contract_id": context.contract_id,
+                    "user_id": context.user_id,
+                    "query": context.query,
+                    "document_type": getattr(context, "document_type", None),
+                    "priority": str(getattr(context, "priority", "MEDIUM"))  # Convert to string
+                },
+                "session_id": getattr(context, "session_id", None),
+                "request_id": getattr(context, "run_id", None)
+            }
+            
+            # Call remote agent
+            data = await call_agent("document-analysis", payload)
+            
+            # Map remote JSON back to AgentResult
+            status_str = str(data.get("status", "")).upper()
+            if status_str == "FAILED":
+                return self.create_result(
+                    status=AgentStatus.FAILED, 
+                    error_message=data.get("error_message", "Remote agent failed")
+                )
+            
+            return self.create_result(
+                status=AgentStatus.COMPLETED,
+                confidence=data.get("confidence", 0.0),
+                findings=data.get("findings", []),
+                recommendations=data.get("recommendations", []),
+                llm_calls=data.get("llm_calls", 0),
+                data_sources=data.get("data_sources", [])
+            )
+            
+        except Exception as e:
+            logger.error(f"Remote agent call failed: {e}")
+            return self.create_result(
+                status=AgentStatus.FAILED,
+                error_message=f"Remote agent error: {str(e)}"
+            )
+
 class AgentCoreDocumentSearchAgent(BaseAgent):
     """Wrapper that invokes an AgentCore Runtime agent by ARN."""
     
@@ -138,7 +192,45 @@ class AgentCoreDocumentSearchAgent(BaseAgent):
             # Because boto3 is sync, offload to a thread to avoid blocking the event loop
             import asyncio
             result = await asyncio.to_thread(
-                _invoke_agentcore_sync, payload, getattr(context, "session_id", None)
+                _invoke_agentcore_sync, payload, getattr(context, "session_id", None), "search"
+            )
+
+            # Map generic response to your AgentResult
+            if isinstance(result, dict) and result.get("error"):
+                return self.create_result(status=AgentStatus.FAILED, error_message=result["error"])
+
+            return self.create_result(
+                status=AgentStatus.COMPLETED,
+                confidence=float(result.get("confidence", 0.0)),
+                findings=result.get("findings", []),
+                recommendations=result.get("recommendations", []),
+                llm_calls=int(result.get("llm_calls", 0)),
+                data_sources=result.get("data_sources", []),
+            )
+        except Exception as e:
+            logger.exception("AgentCore invocation failed")
+            return self.create_result(status=AgentStatus.FAILED, error_message=str(e))
+
+class AgentCoreDocumentAnalysisAgent(BaseAgent):
+    """Wrapper that invokes an AgentCore Runtime agent by ARN for document analysis."""
+    
+    def __init__(self):
+        super().__init__("document_analysis_agentcore", "3.0.0")
+
+    async def _execute_analysis(self, context: AgentContext):
+        try:
+            # Shape the prompt/payload your AgentCore expects.
+            payload = {
+                "contract_id": context.contract_id,
+                "user_id": context.user_id,
+                "query": context.query,
+                "document_type": getattr(context, "document_type", None),
+                "priority": getattr(context, "priority", "MEDIUM"),
+            }
+            # Because boto3 is sync, offload to a thread to avoid blocking the event loop
+            import asyncio
+            result = await asyncio.to_thread(
+                _invoke_agentcore_sync, payload, getattr(context, "session_id", None), "analysis"
             )
 
             # Map generic response to your AgentResult
@@ -192,15 +284,45 @@ class AgentFactory:
         
         # Try to initialize each agent individually
         try:
-            from .document_analyzer import DocumentAnalysisAgent
-            doc_agent = DocumentAnalysisAgent()
+            logger.info(f"🔧 Document Analysis Agent Selection:")
+            logger.info(f"   - settings.use_bedrock_agentcore: {settings.use_bedrock_agentcore}")
+            logger.info(f"   - USE_REMOTE: {USE_REMOTE}")
+            logger.info(f"   - REMOTE_AGENT_ENDPOINTS: {os.getenv('REMOTE_AGENT_ENDPOINTS', 'NOT SET')}")
+            
+            if settings.use_bedrock_agentcore:
+                doc_agent = AgentCoreDocumentAnalysisAgent()
+                logger.info("✅ AgentCore Document Analysis Agent initialized")
+            elif USE_REMOTE:
+                logger.info("🐳 Attempting to create Remote Document Analysis Agent...")
+                try:
+                    doc_agent = RemoteDocumentAnalysisAgent()
+                    logger.info("✅ Remote Document Analysis Agent initialized")
+                except Exception as remote_error:
+                    logger.error(f"❌ Remote Document Analysis Agent failed: {remote_error}")
+                    logger.info("🏠 Falling back to Local Document Analysis Agent...")
+                    try:
+                        from .document_analyzer import DocumentAnalysisAgent
+                        doc_agent = DocumentAnalysisAgent()
+                        logger.info("✅ Local Document Analysis Agent initialized (fallback from remote error)")
+                    except ImportError as ie:
+                        logger.error(f"❌ Local document analysis agent import also failed: {ie}")
+                        raise Exception(f"Both remote and local document analysis agents failed")
+            else:
+                try:
+                    from .document_analyzer import DocumentAnalysisAgent
+                    doc_agent = DocumentAnalysisAgent()
+                    logger.info("✅ Local Document Analysis Agent initialized")
+                except ImportError as ie:
+                    logger.warning(f"Local document analysis agent import failed: {ie}, falling back to remote")
+                    doc_agent = RemoteDocumentAnalysisAgent()
+                    logger.info("✅ Remote Document Analysis Agent initialized (fallback)")
+            
             self._agents.update({
                 AgentType.DOCUMENT_ANALYSIS.value: doc_agent,
                 'document_analyzer': doc_agent,
                 'enhanced_analyzer': doc_agent,
                 'simple_analyzer': doc_agent,
             })
-            logger.info("✅ Document Analysis Agent initialized")
         except Exception as e:
             logger.error(f"❌ Document Analysis Agent failed: {e}")
         

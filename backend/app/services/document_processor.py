@@ -570,7 +570,17 @@ class DocumentProcessor:
                         logger.info(f"Attempting to get agent: {agent_name}")
                         agent = agent_factory.get_agent(agent_name)
                         if agent:
-                            logger.info(f"✅ Got agent {agent_name}: {type(agent).__name__}")
+                            agent_type = type(agent).__name__
+                            logger.info(f"✅ Got agent {agent_name}: {agent_type}")
+                            
+                            # Log agent type for debugging
+                            if 'Remote' in agent_type:
+                                logger.info(f"🐳 Using DOCKER/REMOTE agent for {agent_name}")
+                            elif 'AgentCore' in agent_type:
+                                logger.info(f"☁️ Using AWS BEDROCK AGENTCORE agent for {agent_name}")
+                            else:
+                                logger.info(f"🏠 Using LOCAL/INTERNAL agent for {agent_name}")
+                            
                             logger.info(f"Running {agent_name} for contract {contract_id}")
                             agent_result = await agent.analyze(context)
                             

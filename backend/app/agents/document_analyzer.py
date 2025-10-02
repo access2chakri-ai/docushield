@@ -319,7 +319,7 @@ class DocumentAnalysisAgent(BaseAgent):
             Focus on practical business implications and actionable insights.
             """
             
-            result, call_id = await self._call_llm_with_retry(
+            result = await self._call_llm_with_retry(
                 prompt=analysis_prompt,
                 contract_id=contract_id,
                 max_tokens=1500,
@@ -475,7 +475,7 @@ class DocumentAnalysisAgent(BaseAgent):
             logger.error(f"Failed to get contract data: {e}")
             return None
     
-    async def _call_llm_with_retry(self, prompt: str, contract_id: str, max_tokens: int = 1000, temperature: float = 0.1) -> Tuple[Dict[str, Any], str]:
+    async def _call_llm_with_retry(self, prompt: str, contract_id: str, max_tokens: int = 1000, temperature: float = 0.1) -> Dict[str, Any]:
         """
         Call LLM with retry logic and timeout
         """

@@ -11,10 +11,6 @@ from datetime import datetime
 from dataclasses import dataclass, asdict
 
 from .base_agent import BaseAgent, AgentContext, AgentResult, AgentStatus, AgentPriority
-from .search_agent import DocumentSearchAgent
-from .document_analyzer import DocumentAnalysisAgent
-from .clause_analyzer_agent import ClauseAnalysisAgent
-from .risk_analyzer_agent import RiskAnalysisAgent
 from app.database import get_operational_db
 from app.models import ProcessingRun, ProcessingStep
 
@@ -45,16 +41,31 @@ class DocumentOrchestrator:
     """
     
     def __init__(self):
-        # Initialize all agents with AWS Bedrock AgentCore compatible names
+        # Use agent factory to get properly configured agents (remote/local/agentcore)
+        from .agent_factory import agent_factory
+        
         self.agents = {
-            "document_search_agent": DocumentSearchAgent(),
-            "document_analysis_agent": DocumentAnalysisAgent(),
-            "clause_analysis_agent": ClauseAnalysisAgent(),
-            "risk_analysis_agent": RiskAnalysisAgent()
+            "document_search_agent": agent_factory.get_agent("document_search_agent"),
+            "document_analysis_agent": agent_factory.get_agent("document_analysis_agent"), 
+            "clause_analysis_agent": agent_factory.get_agent("clause_analysis_agent"),
+            "risk_analysis_agent": agent_factory.get_agent("risk_analysis_agent")
         }
         
         self.version = "3.0.0"
         self.logger = logging.getLogger("document_orchestrator")
+        
+        # Log which agents were loaded
+        for agent_name, agent in self.agents.items():
+            if agent:
+                agent_type = type(agent).__name__
+                if 'Remote' in agent_type:
+                    self.logger.info(f"🐳 Orchestrator loaded DOCKER agent for {agent_name}: {agent_type}")
+                elif 'AgentCore' in agent_type:
+                    self.logger.info(f"☁️ Orchestrator loaded AGENTCORE agent for {agent_name}: {agent_type}")
+                else:
+                    self.logger.info(f"🏠 Orchestrator loaded LOCAL agent for {agent_name}: {agent_type}")
+            else:
+                self.logger.warning(f"❌ Orchestrator failed to load agent: {agent_name}")
         
         # AWS Bedrock AgentCore compatibility
         self.agent_metadata = {
@@ -77,7 +88,7 @@ class DocumentOrchestrator:
         Main entry point for processing requests with intelligent routing
         """
         start_time = datetime.now()
-        run_id = f"run_{contract_id}_{int(start_time.timestamp())}"
+        run_id = f"run_{contract_id[:8]}_{int(start_time.timestamp())}"
         
         try:
             # Add timeout protection

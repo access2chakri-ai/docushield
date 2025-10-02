@@ -15,19 +15,30 @@ logger = logging.getLogger(__name__)
 # One boto3 client (thread-safe for most operations)
 _agentcore = boto3.client("bedrock-agentcore", region_name=settings.aws_default_region)
 
-def _invoke_agentcore_sync(payload: Dict[str, Any], session_id: Optional[str] = None) -> Dict[str, Any]:
+def _invoke_agentcore_sync(payload: Dict[str, Any], session_id: Optional[str] = None, agent_type: str = "search") -> Dict[str, Any]:
     """
     Calls AgentCore Runtime (streaming or JSON). Returns dict payload.
+    
+    Args:
+        payload: The payload to send to the agent
+        session_id: Optional session ID
+        agent_type: Type of agent ("search" or "analysis")
     """
-    if not settings.agentcore_runtime_arn:
-        raise RuntimeError("AGENTCORE_RUNTIME_ARN not configured")
+    # Get the appropriate ARN based on agent type
+    if agent_type == "analysis":
+        runtime_arn = getattr(settings, 'agentcore_runtime_arn_analysis', None) or settings.agentcore_runtime_arn
+    else:
+        runtime_arn = getattr(settings, 'agentcore_runtime_arn_search', None) or settings.agentcore_runtime_arn
+    
+    if not runtime_arn:
+        raise RuntimeError(f"AGENTCORE_RUNTIME_ARN for {agent_type} not configured")
 
     # Payload must be bytes
     body = json.dumps(payload).encode("utf-8")
     sid = session_id or f"{settings.agentcore_session_prefix}-{uuid.uuid4()}"
 
     resp = _agentcore.invoke_agent_runtime(
-        agentRuntimeArn=settings.agentcore_runtime_arn,
+        agentRuntimeArn=runtime_arn,
         runtimeSessionId=sid,
         payload=body,
     )
