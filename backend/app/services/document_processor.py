@@ -35,7 +35,8 @@ from app.models import (
 )
 from app.services.risk_analyzer import risk_analyzer, DocumentType, RiskLevel
 from app.services.external_integrations import external_integrations
-from app.services.llm_factory import llm_factory, LLMTask
+from app.services.llm_factory import LLMTask
+from app.services.privacy_safe_llm import privacy_safe_llm, safe_llm_completion, safe_llm_embedding
 from app.services.document_validator import document_classifier, DocumentCategory
 from app.agents import agent_orchestrator
 from app.core.config import settings
@@ -467,31 +468,17 @@ class DocumentProcessor:
                 break
                 
             try:
-                # Generate embedding with tracking
-                embedding_result = await llm_factory.generate_embedding(
+                # Generate embedding with privacy protection
+                embedding_result = await safe_llm_embedding(
                     text=chunk.chunk_text,
-                    task_type=LLMTask.EMBEDDING
+                    contract_id=contract_id
                 )
                 
                 # Update chunk with embedding
                 chunk.embedding = embedding_result["embedding"]
-                chunk.embedding_model = embedding_result.get("model", "text-embedding-3-small")
+                chunk.embedding_model = f"{embedding_result['provider']}:{embedding_result['model']}"
                 
-                # Track LLM call
-                llm_call = LlmCall(
-                    contract_id=contract_id,
-                    user_id=user_id,
-                    provider="openai",
-                    model=chunk.embedding_model,
-                    call_type="embedding",
-                    input_tokens=embedding_result.get("input_tokens", 0),
-                    output_tokens=0,
-                    total_tokens=embedding_result.get("input_tokens", 0),
-                    estimated_cost=embedding_result.get("cost", 0.0),
-                    success=True,
-                    purpose="chunk_embedding"
-                )
-                db.add(llm_call)
+                # LLM call tracking is handled automatically by llm_factory.generate_embedding()
                 
                 embeddings_generated += 1
                 
@@ -671,7 +658,7 @@ class DocumentProcessor:
         
         # Store consolidated findings as GoldFindings
         findings_created = 0
-        findings_to_save = getattr(workflow_result, 'consolidated_findings', [])
+        findings_to_save = getattr(workflow_result, 'findings', [])
         
         logger.info(f"💾 Saving findings to database:")
         logger.info(f"   - Total findings from agents: {len(findings_to_save)}")
@@ -1129,17 +1116,19 @@ class DocumentProcessor:
             }}]
             """
             
-            result = await llm_factory.generate_completion(
+            result = await safe_llm_completion(
                 prompt=clause_prompt,
                 task_type=LLMTask.ANALYSIS,
                 max_tokens=2000,
-                temperature=0.1
+                temperature=0.1,
+                contract_id=contract_id,
+                document_content=text,
+                analysis_type="clause_extraction"
             )
             
             # Track LLM call
             llm_call = LlmCall(
                 contract_id=contract_id,
-                user_id=user_id,
                 provider="openai",
                 model="gpt-4",
                 call_type="completion",
@@ -1204,8 +1193,8 @@ class DocumentProcessor:
     async def _create_embedding(self, text: str, contract_id: str) -> List[float]:
         """Create vector embedding with LLM call tracking"""
         try:
-            # Use LLM Factory for embedding generation
-            result = await llm_factory.generate_embedding(
+            # Use privacy-safe embedding generation
+            result = await safe_llm_embedding(
                 text=text,
                 contract_id=contract_id
             )

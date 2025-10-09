@@ -61,7 +61,7 @@ def create_cluster_engine(cluster_type: ClusterType):
             logger.info(f"Trying SSL configuration {i+1} for {cluster_type.value} cluster")
             engine = create_async_engine(
                 db_url.replace("mysql+pymysql://", "mysql+aiomysql://"),
-                echo=settings.debug,
+                echo=True,  # Enable SQL query logging for debugging
                 pool_pre_ping=True,
                 pool_recycle=300,
                 pool_size=5,

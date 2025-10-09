@@ -11,7 +11,8 @@ from enum import Enum
 import asyncio
 
 from app.core.config import settings
-from app.services.llm_factory import llm_factory, LLMTask
+from app.services.llm_factory import LLMTask, llm_factory
+from app.services.privacy_safe_llm import safe_llm_completion
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,162 @@ class RiskAnalyzer:
             }
         }
     
+    def _parse_llm_response(self, result: Any, expected_type: str = "list") -> Optional[Any]:
+        """
+        Robust parsing of LLM responses from safe_llm_completion
+        
+        Args:
+            result: The result from safe_llm_completion
+            expected_type: "list" or "dict" - what we expect to parse
+            
+        Returns:
+            Parsed JSON object or None if parsing fails
+        """
+        try:
+            content = None
+            
+            # Handle different response formats
+            if isinstance(result, dict):
+                if "content" in result:
+                    content = result["content"]
+                elif "text" in result:
+                    content = result["text"]
+                else:
+                    # Try to use the dict directly
+                    content = json.dumps(result)
+                    
+            elif isinstance(result, (tuple, list)) and len(result) > 0:
+                # Handle tuple/list responses
+                first_element = result[0]
+                
+                if isinstance(first_element, dict):
+                    if "content" in first_element:
+                        content = first_element["content"]
+                    elif "text" in first_element:
+                        content = first_element["text"]
+                    else:
+                        content = json.dumps(first_element)
+                        
+                elif isinstance(first_element, list) and len(first_element) > 0:
+                    # Handle nested list structure
+                    nested = first_element[0]
+                    if isinstance(nested, dict):
+                        if "content" in nested:
+                            content = nested["content"]
+                        elif "text" in nested:
+                            content = nested["text"]
+                        else:
+                            content = json.dumps(nested)
+                    else:
+                        content = str(nested)
+                else:
+                    content = str(first_element)
+                    
+            elif isinstance(result, str):
+                content = result
+            else:
+                content = str(result)
+            
+            if not content:
+                logger.warning("No content found in LLM response")
+                return None
+            
+            # Clean the content string
+            content = content.strip()
+            
+            # Remove markdown code blocks if present
+            if content.startswith('```json'):
+                content = content.replace('```json', '').replace('```', '').strip()
+            elif content.startswith('```'):
+                content = content.replace('```', '').strip()
+            
+            # Try to find JSON in the content if it's mixed with other text
+            json_start = content.find('{') if expected_type == "dict" else content.find('[')
+            if json_start >= 0:
+                if expected_type == "dict":
+                    json_end = content.rfind('}') + 1
+                else:
+                    json_end = content.rfind(']') + 1
+                
+                if json_end > json_start:
+                    json_content = content[json_start:json_end]
+                    try:
+                        parsed = json.loads(json_content)
+                        logger.debug(f"Successfully parsed {expected_type} from LLM response")
+                        return parsed
+                    except json.JSONDecodeError:
+                        pass
+            
+            # Try to parse the entire content as JSON
+            try:
+                parsed = json.loads(content)
+                logger.debug(f"Successfully parsed entire content as {expected_type}")
+                return parsed
+            except json.JSONDecodeError:
+                pass
+            
+            # If all JSON parsing fails, try to extract structured data from text
+            if expected_type == "list":
+                # Try to create a simple list from text content
+                logger.info("JSON parsing failed, creating structured fallback for list")
+                return []
+            else:
+                # Try to create a simple dict from text content
+                logger.info("JSON parsing failed, creating structured fallback for dict")
+                return {"content": content, "parsed": False}
+                
+        except Exception as e:
+            logger.error(f"Error parsing LLM response: {e}")
+            return None
+    
+    def _validate_and_clean_clauses(self, clauses: List[Dict]) -> List[Dict[str, Any]]:
+        """Validate and clean clause extraction results"""
+        cleaned_clauses = []
+        
+        for clause in clauses:
+            if not isinstance(clause, dict):
+                continue
+                
+            # Ensure required fields exist
+            cleaned_clause = {
+                "type": clause.get("type", "unknown"),
+                "text": clause.get("text", "")[:500],  # Limit text length
+                "section": clause.get("section", ""),
+                "risk_indicators": clause.get("risk_indicators", [])
+            }
+            
+            # Only add if we have meaningful content
+            if cleaned_clause["text"].strip():
+                cleaned_clauses.append(cleaned_clause)
+        
+        return cleaned_clauses
+    
+    def _validate_and_clean_risks(self, risks: List[Dict]) -> List[Dict[str, Any]]:
+        """Validate and clean AI risk assessment results"""
+        cleaned_risks = []
+        
+        for risk in risks:
+            if not isinstance(risk, dict):
+                continue
+                
+            # Ensure required fields exist with defaults
+            cleaned_risk = {
+                "type": risk.get("type", "general_risk"),
+                "level": risk.get("level", "medium"),
+                "description": risk.get("description", "Risk identified")[:300],  # Limit description
+                "impact": risk.get("impact", "Potential business impact"),
+                "confidence": min(max(float(risk.get("confidence", 0.5)), 0.0), 1.0)  # Clamp 0-1
+            }
+            
+            # Validate risk level
+            valid_levels = ["low", "medium", "high", "critical"]
+            if cleaned_risk["level"] not in valid_levels:
+                cleaned_risk["level"] = "medium"
+            
+            cleaned_risks.append(cleaned_risk)
+        
+        return cleaned_risks
+    
     async def analyze_document(self, title: str, content: str, doc_type: Optional[DocumentType] = None) -> Dict[str, Any]:
         """
         Comprehensive risk analysis of a document
@@ -143,16 +300,26 @@ class RiskAnalyzer:
             
         except Exception as e:
             logger.error(f"Risk analysis failed for {title}: {e}")
+            import traceback
+            logger.error(f"Risk analysis traceback: {traceback.format_exc()}")
+            
             return {
                 "document_type": "unknown",
                 "overall_risk_level": "medium",
                 "overall_risk_score": 0.5,
                 "detected_clauses": [],
                 "identified_risks": [],
-                "ai_insights": {"error": f"Analysis failed: {str(e)}"},
-                "recommendations": ["Manual review recommended due to analysis error"],
+                "ai_insights": {
+                    "error": f"Analysis failed: {str(e)}",
+                    "executive_summary": "Analysis encountered an error but basic processing completed.",
+                    "key_concerns": ["System error during analysis"],
+                    "business_impact": "Manual review required due to analysis error.",
+                    "recommended_actions": ["Manual document review", "Retry analysis if needed"]
+                },
+                "recommendations": ["Manual review recommended due to analysis error", "Check document format and try again"],
                 "analysis_timestamp": datetime.utcnow().isoformat(),
-                "requires_review": True
+                "requires_review": True,
+                "error_details": str(e)
             }
     
     async def _detect_document_type(self, title: str, content: str) -> DocumentType:
@@ -203,18 +370,22 @@ class RiskAnalyzer:
             [{{"type": "clause_type", "text": "clause text", "section": "section name", "risk_indicators": ["indicator1", "indicator2"]}}]
             """
             
-            result = await llm_factory.generate_completion(
+            result = await safe_llm_completion(
                 prompt=clause_prompt,
                 task_type=LLMTask.ANALYSIS,
                 max_tokens=1000,
                 temperature=0.1
             )
             
-            try:
-                clauses = json.loads(result["content"])
-                return clauses if isinstance(clauses, list) else []
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse AI clause extraction response")
+            # Use robust parsing
+            clauses = self._parse_llm_response(result, expected_type="list")
+            if clauses is not None and isinstance(clauses, list):
+                # Validate and clean the results
+                cleaned_clauses = self._validate_and_clean_clauses(clauses)
+                logger.info(f"Successfully extracted and validated {len(cleaned_clauses)} clauses from AI response")
+                return cleaned_clauses
+            else:
+                logger.info("AI clause extraction returned no valid clauses, using pattern-based fallback")
                 return []
                 
         except Exception as e:
@@ -297,18 +468,22 @@ class RiskAnalyzer:
             [{{"type": "risk_category", "level": "low/medium/high/critical", "description": "risk description", "impact": "potential impact", "confidence": 0.0-1.0}}]
             """
             
-            result = await llm_factory.generate_completion(
+            result = await safe_llm_completion(
                 prompt=risk_prompt,
                 task_type=LLMTask.ANALYSIS,
                 max_tokens=800,
                 temperature=0.2
             )
             
-            try:
-                ai_risks = json.loads(result["content"])
-                return ai_risks if isinstance(ai_risks, list) else []
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse AI risk assessment response")
+            # Use robust parsing
+            ai_risks = self._parse_llm_response(result, expected_type="list")
+            if ai_risks is not None and isinstance(ai_risks, list):
+                # Validate and clean the results
+                cleaned_risks = self._validate_and_clean_risks(ai_risks)
+                logger.info(f"Successfully extracted and validated {len(cleaned_risks)} AI-identified risks")
+                return cleaned_risks
+            else:
+                logger.info("AI risk assessment returned no valid risks, continuing with pattern-based analysis")
                 return []
                 
         except Exception as e:
@@ -341,22 +516,26 @@ class RiskAnalyzer:
             }}
             """
             
-            result = await llm_factory.generate_completion(
+            result = await safe_llm_completion(
                 prompt=insights_prompt,
                 task_type=LLMTask.ANALYSIS,
                 max_tokens=500,
                 temperature=0.3
             )
             
-            try:
-                insights = json.loads(result["content"])
+            # Use robust parsing
+            insights = self._parse_llm_response(result, expected_type="dict")
+            if insights is not None and isinstance(insights, dict) and insights.get("parsed", True):
+                logger.info("Successfully generated AI insights")
                 return insights
-            except json.JSONDecodeError:
+            else:
+                logger.info("AI insights generation failed, using structured fallback")
                 return {
                     "executive_summary": "Document analysis completed with risk assessment.",
-                    "key_concerns": [r["description"] for r in risks[:3]],
+                    "key_concerns": [r.get("description", "Risk identified") for r in risks[:3]],
                     "business_impact": "Review recommended based on identified risks.",
-                    "recommended_actions": ["Review flagged clauses", "Consult legal team if needed"]
+                    "recommended_actions": ["Review flagged clauses", "Consult legal team if needed"],
+                    "analysis_method": "fallback_structured"
                 }
                 
         except Exception as e:

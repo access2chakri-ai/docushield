@@ -30,8 +30,8 @@ interface SearchResponse {
   total_results: number;
   search_time_ms: number;
   search_type: string;
-  applied_filters: Record<string, any>;
-  suggestions: string[];
+  applied_filters?: Record<string, any>;
+  suggestions?: string[];
 }
 
 export default function AdvancedSearchPage() {
@@ -100,6 +100,9 @@ export default function AdvancedSearchPage() {
       }
 
       const searchData: SearchResponse = await response.json();
+      console.log('🔍 Search response received:', searchData);
+      console.log('🔍 Results count:', searchData.results?.length || 0);
+      console.log('🔍 Total results:', searchData.total_results);
       setSearchResponse(searchData);
       setResults(searchData.results || []);
 
@@ -153,6 +156,50 @@ export default function AdvancedSearchPage() {
       style: 'currency',
       currency: 'USD'
     }).format(amount);
+  };
+
+  // Universal highlighting - highlight whatever was actually matched
+  const highlightMatchedTerms = (content: string, searchQuery: string, highlights: string[] = []) => {
+    if (!content) return content;
+    
+    let highlightedContent = content;
+    
+    // First, highlight the specific terms that the backend found (from highlights array)
+    if (highlights && highlights.length > 0) {
+      highlights.forEach(highlight => {
+        if (highlight && highlight.trim()) {
+          // Escape special regex characters
+          const escapedHighlight = highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = new RegExp(`(${escapedHighlight})`, 'gi');
+          highlightedContent = highlightedContent.replace(regex, (match) => {
+            return `<mark class="match-highlight" title="Matched: ${match}">${match}</mark>`;
+          });
+        }
+      });
+    }
+    
+    // Then highlight search query terms that weren't already highlighted
+    if (searchQuery && searchQuery.trim()) {
+      const queryTerms = searchQuery.toLowerCase().split(/\s+/).filter(term => term.length > 2);
+      queryTerms.forEach(term => {
+        // Skip if this term is already highlighted
+        if (highlights.some(h => h.toLowerCase().includes(term))) {
+          return;
+        }
+        
+        const escapedTerm = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`\\b(${escapedTerm})\\b`, 'gi');
+        highlightedContent = highlightedContent.replace(regex, (match) => {
+          // Don't double-highlight
+          if (highlightedContent.includes(`<mark class="match-highlight">${match}</mark>`)) {
+            return match;
+          }
+          return `<mark class="query-highlight" title="Query match: ${match}">${match}</mark>`;
+        });
+      });
+    }
+    
+    return highlightedContent;
   };
 
   return (
@@ -357,9 +404,13 @@ export default function AdvancedSearchPage() {
                           )}
                         </div>
                         
-                        <p className="text-gray-600 mb-3 line-clamp-3">
-                          {result.content_snippet}
-                        </p>
+                        <div className="text-gray-600 mb-3 line-clamp-3">
+                          <div 
+                            dangerouslySetInnerHTML={{
+                              __html: highlightMatchedTerms(result.content_snippet, query, result.highlights)
+                            }}
+                          />
+                        </div>
                         
                         {/* Highlights */}
                         {result.highlights.length > 0 && (
@@ -419,7 +470,7 @@ export default function AdvancedSearchPage() {
                   </p>
                   
                   {/* Suggestions */}
-                  {searchResponse.suggestions.length > 0 && (
+                  {searchResponse.suggestions && searchResponse.suggestions.length > 0 && (
                     <div>
                       <p className="text-sm font-medium text-gray-700 mb-2">💡 Suggestions:</p>
                       <div className="flex flex-wrap justify-center gap-2">
@@ -465,6 +516,39 @@ export default function AdvancedSearchPage() {
           </div>
         </div>
       </div>
+
+      {/* CSS for highlighting */}
+      <style jsx global>{`
+        .match-highlight {
+          background-color: #fef3c7;
+          color: #92400e;
+          padding: 1px 3px;
+          border-radius: 3px;
+          font-weight: 600;
+          border: 1px solid #f59e0b;
+        }
+        
+        .query-highlight {
+          background-color: #dbeafe;
+          color: #1e40af;
+          padding: 1px 3px;
+          border-radius: 3px;
+          font-weight: 500;
+          border: 1px solid #3b82f6;
+        }
+        
+        .match-highlight + .query-highlight,
+        .query-highlight + .match-highlight {
+          margin-left: 2px;
+        }
+        
+        /* Hover effects for highlights */
+        .match-highlight:hover,
+        .query-highlight:hover {
+          transform: scale(1.05);
+          transition: transform 0.1s ease;
+        }
+      `}</style>
     </div>
   );
 }

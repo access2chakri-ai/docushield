@@ -22,11 +22,13 @@ def _invoke_agentcore_sync(payload: Dict[str, Any], session_id: Optional[str] = 
     Args:
         payload: The payload to send to the agent
         session_id: Optional session ID
-        agent_type: Type of agent ("search" or "analysis")
+        agent_type: Type of agent ("search", "analysis", or "conversational")
     """
     # Get the appropriate ARN based on agent type
     if agent_type == "analysis":
         runtime_arn = getattr(settings, 'agentcore_runtime_arn_analysis', None) or settings.agentcore_runtime_arn
+    elif agent_type == "conversational":
+        runtime_arn = getattr(settings, 'agentcore_runtime_arn_conversational', None) or settings.agentcore_runtime_arn
     else:
         runtime_arn = getattr(settings, 'agentcore_runtime_arn_search', None) or settings.agentcore_runtime_arn
     

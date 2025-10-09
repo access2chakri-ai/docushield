@@ -6,7 +6,8 @@ from typing import Optional
 
 from app.core.dependencies import get_current_active_user
 from app.schemas.requests import LLMRequest, GenerateProfilePhotoRequest
-from app.services.llm_factory import llm_factory, LLMProvider, LLMTask
+from app.services.llm_factory import LLMProvider, LLMTask
+from app.services.privacy_safe_llm import privacy_safe_llm
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 
@@ -20,7 +21,7 @@ async def llm_completion(
         provider = LLMProvider(request.provider) if request.provider else None
         task_type = LLMTask(request.task_type)
         
-        result = await llm_factory.generate_completion(
+        result = await privacy_safe_llm.safe_generate_completion(
             prompt=request.prompt,
             task_type=task_type,
             max_tokens=request.max_tokens,
@@ -45,7 +46,7 @@ async def llm_embedding(
     try:
         provider_enum = LLMProvider(provider) if provider else None
         
-        result = await llm_factory.generate_embedding(
+        result = await privacy_safe_llm.safe_generate_embedding(
             text=text,
             preferred_provider=provider_enum
         )
@@ -59,7 +60,7 @@ async def llm_embedding(
 async def get_provider_status(current_user = Depends(get_current_active_user)):
     """Get status of LLM providers"""
     try:
-        status = llm_factory.get_provider_status()
+        status = await privacy_safe_llm.get_provider_status()
         return {
             "providers": status,
             "user_id": current_user.user_id,

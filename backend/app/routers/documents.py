@@ -601,21 +601,22 @@ async def get_contract_analysis(
         highlights = []
         logger.info(f"Processing {len(contract.clause_spans) if contract.clause_spans else 0} clause spans for highlights")
         
+        # Get text content for pattern-based highlighting
+        text_content = ""
+        if contract.text_raw and contract.text_raw.raw_text:
+            text_content = contract.text_raw.raw_text
+        
+        # Always generate pattern-based highlights first (more comprehensive)
+        if text_content:
+            pattern_highlights = document_highlighter.generate_highlights(text_content)
+            highlights.extend(pattern_highlights)
+            logger.info(f"Generated {len(pattern_highlights)} pattern-based highlights")
+        
+        # Add clause span highlights if available (additional coverage)
         if contract.clause_spans and len(contract.clause_spans) > 0:
-            # Use existing clause spans
-            seen_positions = set()  # Track positions to avoid duplicates
+            clause_highlights = []
             
             for clause_span in contract.clause_spans:
-                # Create a position key to identify duplicates
-                position_key = f"{clause_span.start_offset}-{clause_span.end_offset}-{clause_span.clause_type}"
-                
-                # Skip if we've already seen this exact position and clause type
-                if position_key in seen_positions:
-                    logger.debug(f"Skipping duplicate highlight at position {clause_span.start_offset}-{clause_span.end_offset} for {clause_span.clause_type}")
-                    continue
-                
-                seen_positions.add(position_key)
-                
                 # Map clause types to risk levels
                 risk_mapping = {
                     "liability": "high",
@@ -624,39 +625,68 @@ async def get_contract_analysis(
                     "confidentiality": "low",
                     "intellectual_property": "high",
                     "auto_renewal": "medium",
-                    "force_majeure": "low"
+                    "force_majeure": "low",
+                    "indemnification": "high",
+                    "penalty": "medium",
+                    "jurisdiction": "medium"
                 }
                 
                 risk_level = risk_mapping.get(clause_span.clause_type, "medium")
                 
-                highlights.append({
+                clause_highlights.append({
                     "start_offset": clause_span.start_offset,
                     "end_offset": clause_span.end_offset,
                     "risk_level": risk_level,
                     "clause_type": clause_span.clause_type,
                     "title": clause_span.clause_name or f"{clause_span.clause_type.replace('_', ' ').title()} Clause",
                     "description": clause_span.snippet or f"Identified {clause_span.clause_type} clause",
-                    "confidence": clause_span.confidence or 0.8
+                    "confidence": clause_span.confidence or 0.8,
+                    "source": "clause_span"
                 })
-        else:
-            # Fallback: Generate highlights from text patterns
-            # Get text content
-            text_content = ""
-            if contract.text_raw and contract.text_raw.raw_text:
-                text_content = contract.text_raw.raw_text
             
-            if text_content:
-                pattern_highlights = document_highlighter.generate_highlights(text_content)
-                
-                # Deduplicate pattern-based highlights as well
-                seen_positions = set()
-                for highlight in pattern_highlights:
-                    position_key = f"{highlight['start_offset']}-{highlight['end_offset']}-{highlight['clause_type']}"
-                    if position_key not in seen_positions:
-                        seen_positions.add(position_key)
-                        highlights.append(highlight)
-                
-                logger.info(f"Generated {len(highlights)} deduplicated pattern-based highlights for {contract_id}")
+            highlights.extend(clause_highlights)
+            logger.info(f"Added {len(clause_highlights)} clause span highlights")
+        
+        # Remove overlapping highlights (but be less aggressive)
+        if highlights:
+            original_count = len(highlights)
+            highlights = document_highlighter._remove_overlaps(highlights)
+            logger.info(f"Highlight deduplication: {original_count} -> {len(highlights)} highlights after overlap removal")
+
+        # Convert highlights to findings format for consistent frontend display
+        highlight_findings = []
+        if highlights:
+            for i, highlight in enumerate(highlights):
+                highlight_findings.append({
+                    "finding_id": f"highlight_{i}",
+                    "type": highlight.get("clause_type", "risk_pattern"),
+                    "severity": highlight.get("risk_level", "medium"),
+                    "title": highlight.get("title", "Risk Pattern Detected"),
+                    "description": highlight.get("description", "Pattern-based risk detection"),
+                    "confidence": highlight.get("confidence", 0.8),
+                    "source": "pattern_analysis",
+                    "start_offset": highlight.get("start_offset"),
+                    "end_offset": highlight.get("end_offset")
+                })
+
+        # Combine database findings with highlight findings
+        all_findings = []
+        if findings:
+            all_findings.extend([
+                {
+                    "finding_id": finding.finding_id,
+                    "type": finding.finding_type,
+                    "severity": finding.severity,
+                    "title": finding.title,
+                    "description": finding.description,
+                    "confidence": finding.confidence,
+                    "source": "database"
+                }
+                for finding in findings
+            ])
+        
+        # Add highlight findings
+        all_findings.extend(highlight_findings)
 
         # Build response with actual TiDB data
         analysis_data = {
@@ -671,17 +701,7 @@ async def get_contract_analysis(
                 "risk_level": score.risk_level,
                 "category_scores": score.category_scores or {}
             } if score else None,
-            "findings": [
-                {
-                    "finding_id": finding.finding_id,
-                    "type": finding.finding_type,
-                    "severity": finding.severity,
-                    "title": finding.title,
-                    "description": finding.description,
-                    "confidence": finding.confidence
-                }
-                for finding in findings
-            ] if findings else [],
+            "findings": all_findings,
             "suggestions": [
                 {
                     "suggestion_id": suggestion.suggestion_id,
@@ -709,7 +729,9 @@ async def get_contract_analysis(
         
         logger.info(f"📊 Analysis data retrieved for {contract_id}: "
                    f"Score: {'✓' if score else '✗'}, "
-                   f"Findings: {len(findings)}, "
+                   f"Database Findings: {len(findings) if findings else 0}, "
+                   f"Pattern Highlights: {len(highlights)}, "
+                   f"Total Findings: {len(all_findings)}, "
                    f"Suggestions: {len(suggestions)}, "
                    f"Alerts: {len(alerts)}")
         
@@ -1165,7 +1187,7 @@ async def analyze_document(
 async def search_document(
     contract_id: str,
     query: str = Form(...),
-    timeout_seconds: int = Form(30),
+    timeout_seconds: int = Form(90),
     current_user = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_operational_db)
 ):

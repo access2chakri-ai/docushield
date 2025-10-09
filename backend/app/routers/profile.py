@@ -13,7 +13,7 @@ from app.core.auth import get_password_hash, verify_password
 from app.core.dependencies import get_current_active_user
 from app.schemas.requests import UpdateProfileRequest, ChangePasswordRequest, GenerateProfilePhotoRequest
 from app.schemas.responses import UserResponse, ProfilePhotoResponse
-from app.services.llm_factory import llm_factory
+from app.services.privacy_safe_llm import privacy_safe_llm
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
@@ -115,7 +115,7 @@ async def generate_profile_photo(
         print(f"   Quality: {request.quality}")
         print(f"   Style: {request.style}")
         
-        result = await llm_factory.generate_image(
+        result = await privacy_safe_llm.safe_generate_image(
             prompt=enhanced_prompt,
             size=request.size,
             quality=request.quality,

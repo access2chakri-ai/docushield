@@ -30,7 +30,7 @@ class AgentAPI:
         query: str,
         contract_id: str,
         user_id: str,
-        timeout_seconds: int = 30
+        timeout_seconds: int = 90
     ) -> Dict[str, Any]:
         """
         Search within a specific document
@@ -220,7 +220,7 @@ class AgentAPI:
                 user_id=user_id,
                 run_id=f"quick_analysis_{int(datetime.now().timestamp())}",
                 document_type=document_type,
-                timeout_seconds=30,
+                timeout_seconds=90,
                 cache_enabled=True
             )
             

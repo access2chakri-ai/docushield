@@ -21,7 +21,8 @@ from app.models import (
     SilverClauseSpan, Alert, ProcessingRun
 )
 from app.core.config import settings
-from app.services.llm_factory import llm_factory, LLMTask
+from app.services.llm_factory import LLMTask, LLMFactory
+from app.services.privacy_safe_llm import safe_llm_completion
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ class DocumentIntelligenceDigitalTwin:
     """
     
     def __init__(self):
-        self.llm_factory = llm_factory
+        self.llm_factory = LLMFactory()
         
         # Document processing workflow templates
         self.processing_workflows = {

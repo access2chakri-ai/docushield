@@ -9,7 +9,7 @@ from typing import Dict, Any
 from app.database import get_operational_db
 from app.models import BronzeContract, GoldContractScore, GoldFinding, LlmCall
 from app.core.dependencies import get_current_active_user
-from app.services.llm_factory import llm_factory
+from app.services.privacy_safe_llm import privacy_safe_llm
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
@@ -77,7 +77,7 @@ async def get_dashboard_data(
             },
             "risk_distribution": risk_data,
             "recent_activity": recent_data,
-            "provider_usage": llm_factory.usage_stats if hasattr(llm_factory, 'usage_stats') else {}
+            "provider_usage": privacy_safe_llm.llm_factory.usage_stats if hasattr(privacy_safe_llm.llm_factory, 'usage_stats') else {}
         }
         
     except Exception as e:

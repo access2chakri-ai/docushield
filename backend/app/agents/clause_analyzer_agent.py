@@ -13,7 +13,8 @@ from datetime import datetime
 from .base_agent import BaseAgent, AgentContext, AgentResult, AgentStatus
 from app.database import get_operational_db
 from app.models import SilverClauseSpan, BronzeContract
-from app.services.llm_factory import llm_factory, LLMTask
+from app.services.llm_factory import LLMTask
+from app.services.privacy_safe_llm import safe_llm_completion
 
 logger = logging.getLogger(__name__)
 
