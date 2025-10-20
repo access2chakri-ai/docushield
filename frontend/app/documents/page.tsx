@@ -140,61 +140,7 @@ export default function DocumentsPage() {
     router.push(`/documents/${document.contract_id}/analysis`);
   };
 
-  const processDocument = async (document: Document) => {
-    if (!user) return;
 
-    try {
-      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/process`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contract_id: document.contract_id,
-          user_id: user.user_id,
-          trigger: 'manual'
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to process document');
-      }
-
-      const result = await response.json();
-      alert(`Document processing started! Processing ID: ${result.processing_run_id}`);
-      
-      // Refresh documents list
-      fetchDocuments();
-    } catch (err) {
-      alert(`Processing failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  };
-
-  const forceStopProcessing = async (document: Document) => {
-    if (!user) return;
-
-    if (!confirm(`Force stop processing for "${document.filename}"? This will cancel the current processing and allow you to delete or reprocess the document.`)) {
-      return;
-    }
-
-    try {
-      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/documents/${document.contract_id}/force-stop`, {
-        method: 'POST'
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.detail || 'Failed to force stop processing');
-      }
-
-      alert(`Processing stopped for "${document.filename}". You can now delete or reprocess the document.`);
-      
-      // Refresh documents list
-      fetchDocuments();
-    } catch (err) {
-      alert(`Force stop failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  };
 
   const deleteDocument = async (document: Document, force: boolean = false) => {
     if (!user) return;
@@ -436,22 +382,7 @@ export default function DocumentsPage() {
                         >
                           👁️ View
                         </Link>
-                        <button
-                          onClick={() => processDocument(document)}
-                          className="text-green-600 hover:text-green-900"
-                          disabled={document.status === 'processing'}
-                        >
-                          ⚡ Process
-                        </button>
-                        {document.status === 'processing' && (
-                          <button
-                            onClick={() => forceStopProcessing(document)}
-                            className="text-orange-600 hover:text-orange-900"
-                            title="Force stop stuck processing"
-                          >
-                            🛑 Stop
-                          </button>
-                        )}
+
                         <Link
                           href={`/chat?document=${document.contract_id}`}
                           className="text-purple-600 hover:text-purple-900"

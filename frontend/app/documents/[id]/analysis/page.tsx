@@ -316,7 +316,11 @@ export default function DocumentAnalysisPage() {
                             <span className="mr-2">{getSeverityIcon(finding.severity)}</span>
                             <h3 className="font-semibold text-gray-900">{finding.title}</h3>
                           </div>
-                          <p className="text-sm text-gray-600 mb-2">{finding.description}</p>
+                          <p className="text-sm text-gray-600 mb-2">
+                            {finding.description.length > 200 
+                              ? `${finding.description.substring(0, 200)}...` 
+                              : finding.description}
+                          </p>
                           <div className="flex items-center space-x-4 text-xs text-gray-500">
                             <span>Type: {finding.type}</span>
                             <span>Confidence: {Math.round(finding.confidence * 100)}%</span>
@@ -348,7 +352,11 @@ export default function DocumentAnalysisPage() {
                             <span className="mr-2">{getPriorityIcon(suggestion.priority)}</span>
                             <h3 className="font-semibold text-gray-900">{suggestion.title}</h3>
                           </div>
-                          <p className="text-sm text-gray-600 mb-2">{suggestion.description}</p>
+                          <p className="text-sm text-gray-600 mb-2">
+                            {suggestion.description.length > 200 
+                              ? `${suggestion.description.substring(0, 200)}...` 
+                              : suggestion.description}
+                          </p>
                           <div className="flex items-center space-x-4 text-xs text-gray-500">
                             <span>Type: {suggestion.type}</span>
                             <span>Priority: {suggestion.priority}</span>

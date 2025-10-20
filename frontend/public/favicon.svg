@@ -1,0 +1,13 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Shield background -->
+  <path d="M16 2L6 6V14C6 21 10.5 27.5 16 30C21.5 27.5 26 21 26 14V6L16 2Z" fill="#2563EB"/>
+  
+  <!-- Document icon -->
+  <rect x="10" y="8" width="12" height="16" rx="1" fill="white"/>
+  <line x1="12" y1="12" x2="20" y2="12" stroke="#2563EB" stroke-width="1"/>
+  <line x1="12" y1="15" x2="18" y2="15" stroke="#2563EB" stroke-width="1"/>
+  <line x1="12" y1="18" x2="20" y2="18" stroke="#2563EB" stroke-width="1"/>
+  
+  <!-- AI sparkle -->
+  <circle cx="20" cy="10" r="1.5" fill="#10B981"/>
+</svg>

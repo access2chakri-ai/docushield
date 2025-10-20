@@ -1,140 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { config } from '../utils/config';
-
-interface DashboardStats {
-  overview: {
-    total_contracts: number;
-    recent_alerts: number;
-    processing_stats: Record<string, number>;
-  };
-  risk_distribution: Record<string, number>;
-  provider_usage: Record<string, any>;
-}
-
-interface ProviderStatus {
-  providers: Record<string, {
-    available: boolean;
-    usage: any;
-    models: string[];
-  }>;
-  settings: {
-    default_provider: string;
-    fallback_enabled: boolean;
-    load_balancing: boolean;
-  };
-}
 
 export default function Home() {
-  const [dashboardData, setDashboardData] = useState<DashboardStats | null>(null);
-  const [providerStatus, setProviderStatus] = useState<ProviderStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchDashboardData();
-    fetchProviderStatus();
-  }, []);
-
-  const fetchDashboardData = async () => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-      
-      const response = await fetch(`${config.apiBaseUrl}/api/analytics/dashboard`, {
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      
-      if (response.ok) {
-        const data = await response.json();
-        setDashboardData(data);
-      } else {
-        console.warn('Dashboard API returned:', response.status);
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.warn('Dashboard API request timed out');
-      } else {
-        console.error('Failed to fetch dashboard data:', error);
-      }
-      // Set empty dashboard data to prevent infinite loading
-      setDashboardData({
-        overview: { total_contracts: 0, recent_alerts: 0, processing_stats: {} },
-        risk_distribution: {},
-        provider_usage: {}
-      });
-    }
-  };
-
-  const fetchProviderStatus = async () => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-      
-      const response = await fetch(`${config.apiBaseUrl}/health`, {
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      
-      if (response.ok) {
-        const data = await response.json();
-        // Handle the health endpoint response structure
-        if (data.llm_providers) {
-          setProviderStatus({
-            providers: data.llm_providers,
-            settings: {
-              default_provider: 'openai',
-              fallback_enabled: true,
-              load_balancing: false
-            }
-          });
-        } else {
-          // Handle direct providers response
-          setProviderStatus(data);
-        }
-      } else {
-        console.warn('Health API returned:', response.status);
-        // Set fallback status
-        setProviderStatus({
-          providers: {},
-          settings: {
-            default_provider: 'openai',
-            fallback_enabled: true,
-            load_balancing: false
-          }
-        });
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.warn('Health API request timed out');
-      } else {
-        console.error('Failed to fetch provider status:', error);
-      }
-      // Set fallback status to prevent infinite loading
-      setProviderStatus({
-        providers: {},
-        settings: {
-          default_provider: 'openai',
-          fallback_enabled: true,
-          load_balancing: false
-        }
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getRiskColor = (level: string) => {
-    switch (level) {
-      case 'critical': return 'text-red-600 bg-red-100';
-      case 'high': return 'text-orange-600 bg-orange-100';
-      case 'medium': return 'text-yellow-600 bg-yellow-100';
-      case 'low': return 'text-green-600 bg-green-100';
-      default: return 'text-gray-600 bg-gray-100';
-    }
-  };
 
   return (
     <div className="min-h-screen bg-documents-pattern relative overflow-hidden">
@@ -178,13 +46,13 @@ export default function Home() {
           </div>
           
           <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
-            Enterprise Document Intelligence
+            AI-Powered Document Intelligence
           </h1>
           <p className="text-xl text-gray-600 mb-6 font-medium">
-            Transform your document workflows with AI-powered analysis, risk assessment, and intelligent insights
+            Enterprise document analysis with multi-LLM AI, real-time enrichment, and intelligent risk assessment
           </p>
           <p className="text-sm text-gray-500 mb-8">
-            Secure • Scalable • Enterprise-Ready • Multi-LLM Architecture
+            Multi-LLM • MCP Integration • TiDB Vector Search • Enterprise Security
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
@@ -202,113 +70,49 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Navigation Cards */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-5 gap-6 mb-12">
-          <Link href="/documents" className="group block">
-            <div className="bg-white p-6 rounded-xl shadow-md hover:shadow-xl transition-all group-hover:scale-105 group-hover:-translate-y-1 duration-300 border border-gray-100">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-200 transition-colors">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-semibold mb-2 text-gray-900">My Documents</h3>
-              <p className="text-gray-600 text-sm">View and manage your documents</p>
-            </div>
-          </Link>
-
-          <Link href="/upload" className="group block">
-            <div className="bg-white p-6 rounded-xl shadow-md hover:shadow-xl transition-all group-hover:scale-105 group-hover:-translate-y-1 duration-300 border border-gray-100">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-green-200 transition-colors">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-semibold mb-2 text-gray-900">Upload Documents</h3>
-              <p className="text-gray-600 text-sm">Upload contracts for AI analysis</p>
-            </div>
-          </Link>
-
-          <Link href="/search" className="group block">
-            <div className="bg-white p-6 rounded-xl shadow-md hover:shadow-xl transition-all group-hover:scale-105 group-hover:-translate-y-1 duration-300 border border-gray-100">
-              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-purple-200 transition-colors">
-                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-semibold mb-2 text-gray-900">Smart Search</h3>
-              <p className="text-gray-600 text-sm">Hybrid semantic + keyword search</p>
-            </div>
-          </Link>
-
-          <Link href="/digital-twin" className="group block">
-            <div className="bg-white p-6 rounded-xl shadow-md hover:shadow-xl transition-all group-hover:scale-105 group-hover:-translate-y-1 duration-300 border border-gray-100">
-              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-orange-200 transition-colors">
-                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-semibold mb-2 text-gray-900">Digital Twin</h3>
-              <p className="text-gray-600 text-sm">AI-powered workflow modeling</p>
-            </div>
-          </Link>
-
-          <Link href="/chat" className="group block">
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-xl shadow-md hover:shadow-xl transition-all group-hover:scale-105 group-hover:-translate-y-1 duration-300 text-white">
-              <div className="w-12 h-12 bg-white bg-opacity-20 rounded-lg flex items-center justify-center mb-4 group-hover:bg-opacity-30 transition-colors">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-semibold mb-2">AI Chat</h3>
-              <p className="text-blue-100 text-sm">Chat with your documents</p>
-            </div>
-          </Link>
-        </div>
-
-
 
         {/* Features Section */}
         <div className="bg-white rounded-xl shadow-md p-8 mb-12">
-          <h2 className="text-3xl font-bold text-center mb-8">🚀 Platform Features</h2>
+          <h2 className="text-3xl font-bold text-center mb-8">🚀 Enterprise AI Features</h2>
           
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             <div className="text-center">
-              <div className="text-4xl mb-4">🏗️</div>
-              <h3 className="text-xl font-semibold mb-3">Bronze → Silver → Gold</h3>
+              <div className="text-4xl mb-4">🧠</div>
+              <h3 className="text-xl font-semibold mb-3">Multi-LLM Intelligence</h3>
               <p className="text-gray-600">
-                Multi-layer data architecture for enterprise document processing
+                OpenAI, Anthropic, Gemini, Groq, and AWS Bedrock with intelligent routing
               </p>
             </div>
             
             <div className="text-center">
               <div className="text-4xl mb-4">🔍</div>
-              <h3 className="text-xl font-semibold mb-3">Hybrid Search</h3>
+              <h3 className="text-xl font-semibold mb-3">Smart Document Search</h3>
               <p className="text-gray-600">
-                Vector similarity + full-text search powered by TiDB
+                Vector similarity + semantic search with TiDB vector database
               </p>
             </div>
             
             <div className="text-center">
-              <div className="text-4xl mb-4">🧠</div>
-              <h3 className="text-xl font-semibold mb-3">Multi-LLM Factory</h3>
+              <div className="text-4xl mb-4">🌐</div>
+              <h3 className="text-xl font-semibold mb-3">MCP Integration</h3>
               <p className="text-gray-600">
-                OpenAI, Anthropic, Gemini, and Groq with intelligent routing
+                Real-time web search, news, legal precedents, and industry data enrichment
               </p>
             </div>
             
             <div className="text-center">
               <div className="text-4xl mb-4">📊</div>
-              <h3 className="text-xl font-semibold mb-3">Risk Analysis</h3>
+              <h3 className="text-xl font-semibold mb-3">Risk Assessment</h3>
               <p className="text-gray-600">
-                AI-powered contract risk assessment and scoring
+                AI-powered contract analysis with compliance and risk scoring
               </p>
             </div>
             
             <div className="text-center">
               <div className="text-4xl mb-4">🔗</div>
-              <h3 className="text-xl font-semibold mb-3">Multi-Cluster TiDB</h3>
+              <h3 className="text-xl font-semibold mb-3">Enterprise Architecture</h3>
               <p className="text-gray-600">
-                Operational, Sandbox, and Analytics clusters for scalability
+                Multi-cluster TiDB with operational, sandbox, and analytics layers
               </p>
             </div>
             
@@ -316,20 +120,43 @@ export default function Home() {
               <div className="text-4xl mb-4">⚡</div>
               <h3 className="text-xl font-semibold mb-3">Real-time Processing</h3>
               <p className="text-gray-600">
-                Async processing pipeline with live status updates
+                Async document pipeline with live status updates and notifications
               </p>
             </div>
           </div>
         </div>
 
-        {/* Demo Section */}
-        <div className="text-center">
-          <Link 
-            href="/demo" 
-            className="inline-block bg-blue-600 text-white px-8 py-4 rounded-lg text-lg font-semibold hover:bg-blue-700 transition-colors"
-          >
-            🎯 Try Interactive Demo
-          </Link>
+        {/* MCP Integration Highlight */}
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg p-8 mb-12 text-white">
+          <div className="text-center">
+            <h2 className="text-3xl font-bold mb-4">🌐 MCP Integration for Document Enrichment</h2>
+            <p className="text-xl mb-6 text-blue-100">
+              Enhance your document analysis with real-time external data sources
+            </p>
+            <div className="grid md:grid-cols-3 gap-6 mb-8">
+              <div className="text-center">
+                <div className="text-4xl mb-3">🔍</div>
+                <h3 className="text-lg font-semibold mb-2">Web Search</h3>
+                <p className="text-blue-100 text-sm">Real-time web search for context and verification</p>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl mb-3">📰</div>
+                <h3 className="text-lg font-semibold mb-2">News & Trends</h3>
+                <p className="text-blue-100 text-sm">Latest industry news and market trends</p>
+              </div>
+              <div className="text-center">
+                <div className="text-4xl mb-3">⚖️</div>
+                <h3 className="text-lg font-semibold mb-2">Legal Precedents</h3>
+                <p className="text-blue-100 text-sm">Legal case references and regulatory data</p>
+              </div>
+            </div>
+            <Link 
+              href="/demo" 
+              className="inline-block bg-white text-blue-600 px-8 py-4 rounded-lg text-lg font-semibold hover:bg-gray-100 transition-colors"
+            >
+              🎯 Try Interactive Demo
+            </Link>
+          </div>
         </div>
       </div>
     </div>
