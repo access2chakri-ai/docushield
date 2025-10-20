@@ -1,289 +1,259 @@
-# DocuShield -
+# DocuShield Demo
 
-> **Multi-Step Agentic Document Analysis Platform**  
-> Showcasing TiDB Serverless Vector Search + LLM Chains + External APIs
+> AI-Powered Document Analysis Platform - Demonstration Project
 
-## Requirements Met
+DocuShield is a comprehensive document intelligence platform that showcases modern AI technologies for document processing, analysis, and insights generation. This is a demonstration project built for educational and portfolio purposes.
 
-✅ **TiDB Serverless Integration** - Full vector search capabilities  
-✅ **Multi-Step Agentic Workflow** - 5-step automated process  
-✅ **Vector + Full-Text Search** - Hybrid search implementation  
-✅ **LLM Chain Integration** - OpenAI GPT-4 multi-step reasoning  
-✅ **External API Integration** - Extensible external enrichment  
-✅ **Production Ready** - Clean architecture, error handling, monitoring
+## 🚀 Features
 
-## 🎯 What DocuShield Does
+### Core Capabilities
+- **Multi-LLM Integration** - OpenAI, Anthropic, Gemini, and Groq APIs
+- **Document Processing** - PDF, DOCX, and text file analysis
+- **Semantic Search** - Vector similarity + full-text search with TiDB
+- **Risk Analysis** - AI-powered contract risk assessment
+- **Real-time Chat** - Interactive document Q&A
+- **Analytics Dashboard** - QuickSight integration for insights
+- **Multi-tier Architecture** - Bronze, Silver, Gold data layers
 
-DocuShield is an intelligent document analysis agent that demonstrates a complete **multi-step agentic workflow**:
+### Technology Stack
+- **Frontend**: Next.js 14, React, TypeScript, Tailwind CSS
+- **Backend**: FastAPI, Python 3.11, SQLAlchemy
+- **Database**: TiDB Cloud (MySQL-compatible with vector search)
+- **AI/ML**: OpenAI GPT-4, Anthropic Claude, Google Gemini, Groq
+- **Cloud**: AWS (S3, App Runner, Amplify, QuickSight, SageMaker)
+- **Authentication**: JWT-based auth system
 
-### 🔄 The 5-Step Agent Process
+## 📁 Project Structure
 
-1. **📄 Document Ingestion** - Upload PDFs/DOCX with vector embeddings
-2. **🔍 TiDB Vector Search** - Hybrid vector + full-text search  
-3. **🧠 LLM Analysis Chain** - Multi-step reasoning with OpenAI
-4. **🌐 External Enrichment** - API integration for data enhancement
-5. **📋 Result Synthesis** - Comprehensive answer generation
+```
+docushield/
+├── frontend/                 # Next.js React application
+│   ├── app/                 # App router pages and components
+│   ├── utils/               # Utility functions and config
+│   └── public/              # Static assets
+├── backend/                 # FastAPI Python application
+│   ├── app/                 # Main application code
+│   │   ├── agents/          # AI agent implementations
+│   │   ├── routers/         # API route handlers
+│   │   ├── services/        # Business logic services
+│   │   ├── core/            # Core utilities and config
+│   │   └── models.py        # Database models
+│   └── requirements.txt     # Python dependencies
+├── scripts/                 # Deployment and utility scripts
+└── docs/                    # Additional documentation
+```
 
-### 💡 Key Innovation
-
-Unlike simple Q&A systems, DocuShield creates an **autonomous agent** that:
-- Intelligently searches your documents using TiDB's vector capabilities
-- Chains multiple LLM calls for deeper analysis
-- Enriches results with external data sources
-- Provides transparent, step-by-step reasoning
-
-## 🚀 Quick Start
+## 🛠️ Local Development Setup
 
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
-- Amazon Bedrock API Key (default) or OpenAI API Key
-- TiDB Cloud account (or local TiDB)
+- TiDB Cloud account
+- API keys for AI providers (OpenAI, Anthropic, etc.)
 
-### 1. Clone & Setup
+### Backend Setup
 ```bash
-git clone <your-repo>
-cd docushield
-
-# Backend setup
 cd backend
-cp env.example .env
-# Edit .env with your TiDB and OpenAI credentials
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# Frontend setup  
-cd ../frontend
+# Copy environment template
+cp .env.production.example .env
+# Edit .env with your API keys and database URL
+
+# Run the backend
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Frontend Setup
+```bash
+cd frontend
 npm install
+
+# Copy environment template
+cp .env.production.example .env.local
+# Edit .env.local with your backend URL
+
+# Run the frontend
+npm run dev
 ```
 
-### 2. Configure Environment
-Edit `backend/.env`:
+### Database Setup
+1. Create a TiDB Serverless cluster at [TiDB Cloud](https://tidbcloud.com)
+2. Get your connection string
+3. Update the `DATABASE_URL` in your backend `.env` file
+4. The application will automatically create tables on first run
+
+## 🚀 Production Deployment
+
+### Backend Deployment (AWS App Runner)
+1. Push your code to GitHub
+2. Create an App Runner service
+3. Connect to your repository's `backend` folder
+4. Use the provided `apprunner.yaml` configuration
+5. Set environment variables in App Runner console
+
+### Frontend Deployment (AWS Amplify)
+1. Create an Amplify app
+2. Connect to your repository's `frontend` folder
+3. Use the provided `amplify.yml` configuration
+4. Set `NEXT_PUBLIC_API_BASE_URL` to your App Runner URL
+
+### Required Environment Variables
+
+#### Backend
 ```bash
-# TiDB Configuration (get from TiDB Cloud)
-TIDB_HOST=gateway01.us-west-2.prod.aws.tidbcloud.com
-TIDB_PORT=4000
-TIDB_USER=your_username
-TIDB_PASSWORD=your_password
-TIDB_DATABASE=docushield
-
-# AWS Configuration for Bedrock (Standard AWS Authentication)
-AWS_ACCESS_KEY_ID=your_aws_access_key_id
-AWS_SECRET_ACCESS_KEY=your_aws_secret_access_key
-AWS_DEFAULT_REGION=us-east-1
-
-# Optional: Other provider API keys for fallback
-# OPENAI_API_KEY=your_openai_key_here
+DATABASE_URL=your-tidb-connection-string
+OPENAI_API_KEY=your-openai-key
+ANTHROPIC_API_KEY=your-anthropic-key
+GOOGLE_API_KEY=your-google-key
+GROQ_API_KEY=your-groq-key
+AWS_ACCESS_KEY_ID=your-aws-access-key
+AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+S3_BUCKET_NAME=your-s3-bucket
+CORS_ORIGINS=https://your-frontend-domain.amplifyapp.com
 ```
 
-### 3. Run the Application
+#### Frontend
 ```bash
-# Terminal 1: Backend
-cd backend && python main.py
-
-# Terminal 2: Frontend  
-cd frontend && npm run dev
+NEXT_PUBLIC_API_BASE_URL=https://your-backend-url.apprunner.com
+NEXT_PUBLIC_ENVIRONMENT=production
 ```
 
-Visit **http://localhost:3000** to see the demo!
+## 🔧 Key Components
 
-### 4. Docker Alternative
+### AI Agents
+- **Document Analyzer** - Comprehensive document analysis
+- **Search Agent** - Semantic and keyword search
+- **Conversational Agent** - Interactive chat interface
+- **Risk Analyzer** - Contract risk assessment
+- **Orchestrator** - Coordinates multi-agent workflows
+
+### Data Architecture
+- **Bronze Layer** - Raw document storage
+- **Silver Layer** - Processed chunks and embeddings
+- **Gold Layer** - Analysis results and insights
+
+### API Endpoints
+- `/api/documents/` - Document management
+- `/api/chat/` - Conversational AI
+- `/api/search/` - Document search
+- `/api/analytics/` - Dashboard data
+- `/api/auth/` - Authentication
+
+## 🎯 Use Cases
+
+### Document Types Supported
+- Contracts and agreements
+- Legal documents
+- Financial reports
+- Business proposals
+- Technical documentation
+
+### Analysis Capabilities
+- Risk assessment and scoring
+- Key clause identification
+- Compliance checking
+- Financial term extraction
+- Semantic search across documents
+
+## 🔒 Security & Privacy
+
+### Data Protection
+- All documents encrypted in transit and at rest
+- JWT-based authentication
+- User-specific data isolation
+- Secure API key management
+
+### Privacy Features
+- Optional content redaction for sensitive data
+- Local processing options
+- Configurable data retention policies
+
+## 📊 Analytics & Monitoring
+
+### Built-in Analytics
+- Document processing metrics
+- AI usage statistics
+- Risk distribution analysis
+- User activity tracking
+
+### QuickSight Integration
+- Interactive dashboards
+- Real-time data visualization
+- Custom report generation
+- Embedded analytics
+
+## 🧪 Testing
+
+### Backend Testing
 ```bash
-# Set environment variables
-export TIDB_HOST="your-tidb-host"
-export TIDB_USER="your-username"
-export TIDB_PASSWORD="your-password"
-export AWS_ACCESS_KEY_ID="your-aws-access-key-id"
-export AWS_SECRET_ACCESS_KEY="your-aws-secret-access-key"
-export AWS_DEFAULT_REGION="us-east-1"
-
-# Start all services
-docker-compose up -d
+cd backend
+pytest tests/
 ```
 
-## 🎬 Demo Flow
-
-### Step 1: Upload Documents
-- Visit http://localhost:3000/upload
-- Upload PDF, DOCX, or text files
-- Documents are processed and vectorized using OpenAI embeddings
-
-### Step 2: Ask Questions
-- Visit http://localhost:3000/chat  
-- Ask questions like:
-  - "What are the main topics discussed?"
-  - "Summarize the key findings"
-  - "What recommendations are made?"
-
-### Step 3: Watch the Agent Work
-- See real-time multi-step processing
-- Vector search finds relevant documents
-- LLM chains analyze and synthesize
-- External APIs enrich the results
-
-### Step 4: View Results
-- Comprehensive answers with source citations
-- Execution metrics (steps, timing, documents used)
-- Full transparency into the agent's reasoning
-
-## 🤖 LLM Provider Support
-
-DocuShield now supports multiple LLM providers with automatic fallback:
-
-### 🥇 Amazon Bedrock (Default)
-- **Model**: Nova Lite (`amazon.nova-lite-v1:0`)
-- **Features**: High-quality completions, cost-effective
-- **Embeddings**: Titan Text Embeddings V2 (`amazon.titan-embed-text-v2:0`)
-- **Setup**: Get your API key from [AWS Bedrock Console](https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys-use.html)
-
-### 🔄 Supported Providers
-1. **Amazon Bedrock** (Nova Lite) - Default
-2. **OpenAI** (GPT-4, GPT-3.5-turbo)
-3. **Anthropic** (Claude 4, Claude 3.5)
-4. **Google Gemini** (Gemini Pro)
-5. **Groq** (Mixtral, LLaMA)
-
-Configure via environment variables:
+### Frontend Testing
 ```bash
-DEFAULT_LLM_PROVIDER=bedrock  # bedrock, openai, anthropic, gemini, groq
-LLM_FALLBACK_ENABLED=true    # Auto-fallback on errors
+cd frontend
+npm test
 ```
 
-## 🏗️ Technical Architecture
+## 📈 Performance
 
-### Backend (FastAPI + TiDB)
-```
-app/
-├── agents.py          # Multi-step agent workflow
-├── api.py            # REST API endpoints  
-├── models.py         # TiDB database models
-├── database.py       # TiDB connection & vector search
-└── core/config.py    # Configuration management
-```
+### Optimization Features
+- Async document processing
+- Intelligent caching
+- Connection pooling
+- Vector search optimization
+- Multi-provider load balancing
 
-### Frontend (Next.js)
-```
-app/
-├── page.tsx          # Landing page with demo info
-├── upload/page.tsx   # Document upload interface
-├── chat/page.tsx     # Interactive chat with agent
-└── demo/page.tsx     # Workflow visualization
-```
+### Scalability
+- Horizontal scaling with App Runner
+- TiDB auto-scaling
+- S3 unlimited storage
+- CDN integration with Amplify
 
-### Key Technologies
-- **TiDB Serverless** - Vector search + HTAP capabilities
-- **FastAPI** - High-performance async API framework
-- **Next.js 14** - Modern React framework
-- **OpenAI GPT-4** - Advanced language model
-- **Vector Embeddings** - Semantic document search
+## 🤝 Contributing
 
-## 🔍 TiDB Integration Details
+This is a demonstration project, but contributions are welcome:
 
-### Vector Search Implementation
-```python
-# Store document with vector embedding
-doc = Document(
-    title=title,
-    content=content,
-    embedding=openai_embedding  # JSON array in TiDB
-)
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
 
-# Hybrid search query
-SELECT id, title, content,
-       VEC_COSINE_DISTANCE(embedding, :query_embedding) as similarity
-FROM documents 
-WHERE dataset_id = :dataset_id
-ORDER BY similarity ASC
-```
+## 📄 License
 
-### Database Schema
-```sql
--- Documents with vector embeddings
-CREATE TABLE documents (
-    id VARCHAR(36) PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    content TEXT NOT NULL,
-    embedding JSON,  -- Vector stored as JSON array
-    dataset_id VARCHAR(36) NOT NULL,
-    created_at DATETIME DEFAULT NOW()
-);
+This project is for demonstration and educational purposes. See individual component licenses for specific terms.
 
--- Agent execution tracking
-CREATE TABLE agent_runs (
-    id VARCHAR(36) PRIMARY KEY,
-    query TEXT NOT NULL,
-    retrieval_results JSON,    -- Search results
-    llm_analysis JSON,         -- LLM reasoning steps  
-    external_actions JSON,     -- API call results
-    final_answer TEXT,         -- Synthesized response
-    execution_time FLOAT,
-    status VARCHAR(50) DEFAULT 'running'
-);
-```
+## 🆘 Support
 
-## 🚧 Development Notes
+For questions about this demonstration project:
+- Check the deployment guide in `DEPLOYMENT.md`
+- Review the API documentation
+- Examine the code examples in `/examples`
 
-### Removed Over-Engineering
-The original codebase had many complex components that didn't add value for the hackathon:
-- ❌ Complex MCP server architecture  
-- ❌ Over-abstracted workflow orchestrator
-- ❌ Unnecessary middleware layers
-- ❌ 60+ dependencies
+## 🎓 Educational Purpose
 
-### Focused Implementation  
-The new version focuses on hackathon requirements:
-- ✅ Simple, clear multi-step agent
-- ✅ Direct TiDB integration
-- ✅ ~20 essential dependencies
-- ✅ Production-ready but not over-engineered
+This project demonstrates:
+- Modern full-stack development practices
+- AI/ML integration patterns
+- Cloud-native architecture
+- Document processing workflows
+- Real-time analytics implementation
+- Production deployment strategies
 
-## 🔧 API Endpoints
+## 🔗 Related Technologies
 
-```bash
-# Health check
-GET /health
-
-# Upload document
-POST /api/documents/upload
-Content-Type: multipart/form-data
-
-# Ask question (triggers multi-step agent)
-POST /api/ask
-{
-  "question": "What are the main topics?",
-  "dataset_id": "default"
-}
-
-# Get analysis results  
-GET /api/runs/{run_id}
-
-# List documents
-GET /api/datasets/{dataset_id}/documents
-
-# List recent runs
-GET /api/runs
-```
-
-## 🏃‍♂️ Performance Metrics
-
-- **Document Processing**: ~2-3 seconds per document
-- **Vector Search**: <500ms for similarity queries
-- **Multi-Step Analysis**: 8-15 seconds end-to-end
-- **Concurrent Users**: Tested with 10+ simultaneous queries
-- **Database**: Handles 1000+ documents efficiently
-
-## 🔮 Future Enhancements
-
-- **Advanced RAG** - Re-ranking and query expansion
-- **More LLM Providers** - Anthropic, local models
-- **Workflow Builder** - Visual agent workflow designer
-- **Real-time Collaboration** - Multi-user document analysis
-- **Enterprise Features** - SSO, audit logs, fine-tuning
-
-## 📞 Support & Contact
-
-- **GitHub**: [Your Repository URL]
-- **Demo Video**: [YouTube/Vimeo Link]  
-- **Live Demo**: [Deployed Application URL]
-- **Email**: your-email@example.com
+- [TiDB Cloud](https://tidbcloud.com) - Serverless MySQL with vector search
+- [OpenAI API](https://openai.com/api/) - GPT models for analysis
+- [Anthropic Claude](https://anthropic.com) - Advanced reasoning capabilities
+- [AWS Services](https://aws.amazon.com) - Cloud infrastructure
+- [Next.js](https://nextjs.org) - React framework
+- [FastAPI](https://fastapi.tiangolo.com) - Python web framework
 
 ---
+
+**Note**: This is a demonstration project showcasing AI document processing capabilities. It is not intended for production use with sensitive or confidential documents without proper security review and implementation of additional safeguards.

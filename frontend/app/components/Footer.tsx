@@ -17,12 +17,13 @@ export default function Footer() {
               />
             </div>
             <p className="text-gray-600 text-sm mb-4">
-              AI-powered document intelligence platform with digital twin technology. 
-              Analyze contracts, assess risks, and simulate business impacts with advanced AI.
+              Enterprise-grade document intelligence platform with AI-powered analysis. 
+              Transform your document workflows with advanced contract analysis, risk assessment, 
+              and intelligent insights powered by cutting-edge AI technology.
             </p>
             <div className="flex space-x-4">
               <div className="text-sm text-gray-500">
-                Powered by TiDB Serverless + Multi-LLM Factory
+                Secure • Scalable • Enterprise-Ready
               </div>
             </div>
           </div>
@@ -90,7 +91,7 @@ export default function Footer() {
         <div className="border-t border-gray-200 pt-8 mt-8">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="text-sm text-gray-500">
-              © 2024 DocuShield. Built for TiDB Hackathon 2024.
+              © 2024 DocuShield Demo. Built for demonstration purposes. Enterprise Document Intelligence Platform.
             </div>
             <div className="flex items-center space-x-6 mt-4 md:mt-0">
               <div className="flex items-center space-x-2 text-xs text-gray-500">

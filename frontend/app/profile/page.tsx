@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { isAuthenticated, getUserData, authenticatedFetch, type User } from '@/utils/auth';
-import { config } from '@/utils/config';
+import { isAuthenticated, getUserData, authenticatedFetch, type User } from '../../utils/auth';
+import { config } from '../../utils/config';
 
 interface ProfilePhotoResponse {
   success: boolean;
@@ -17,6 +17,7 @@ interface ProfilePhotoResponse {
 export default function ProfilePage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
@@ -40,6 +41,13 @@ export default function ProfilePage() {
   const router = useRouter();
 
   useEffect(() => {
+    // Prevent hydration mismatch by ensuring client-side only execution
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
     if (!isAuthenticated()) {
       router.push('/auth');
       return;
@@ -53,7 +61,7 @@ export default function ProfilePage() {
     } else {
       fetchUserProfile();
     }
-  }, [router]);
+  }, [router, mounted]);
 
   const fetchUserProfile = async () => {
     try {
@@ -230,7 +238,8 @@ export default function ProfilePage() {
     }
   };
 
-  if (loading) {
+  // Show loading state during hydration and data fetching
+  if (!mounted || loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -239,7 +248,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 no-animations">
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           {/* Header */}

@@ -34,6 +34,9 @@ requests>=2.31.0          # Additional HTTP client for API calls
 nltk>=3.8.0              # Text processing for keyword extraction
 aiofiles>=23.0.0         # Async file operations
 
+# Data processing and analytics
+pandas>=2.0.0
+
 # Utilities
 python-dotenv>=1.0.0  # Optional: only needed for .env file support
 python-json-logger>=2.0.7

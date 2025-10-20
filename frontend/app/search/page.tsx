@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
-import { config } from '@/utils/config';
-import DocumentTypeFilter from '@/app/components/DocumentTypeFilter';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '../../utils/auth';
+import { config } from '../../utils/config';
+import DocumentTypeFilter from '../components/DocumentTypeFilter';
 
 interface SearchResult {
   document_id: string;

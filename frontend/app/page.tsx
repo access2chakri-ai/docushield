@@ -144,30 +144,22 @@ export default function Home() {
       <div className="floating-document bottom-32 left-1/4 text-4xl">🔍</div>
       <div className="floating-document bottom-20 right-1/3 text-5xl">📋</div>
       
-      {/* Subtle data flow lines */}
-      <div className="data-flow top-0 left-1/4" style={{animationDelay: '0s'}}></div>
-      <div className="data-flow top-0 right-1/3" style={{animationDelay: '1s'}}></div>
-      <div className="data-flow top-0 left-2/3" style={{animationDelay: '2s'}}></div>
+
       
       <div className="container mx-auto px-4 py-8 relative z-10">
         {/* Header */}
         <div className="text-center max-w-6xl mx-auto mb-16">
-          <div className="flex justify-end mb-4">
-            <Link
-              href="/auth"
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors duration-200"
-            >
-              🔐 Login / Sign Up
-            </Link>
-          </div>
+
           
           {/* Logo */}
           <div className="flex justify-center mb-8">
-            <img 
-              src="/docushield-logo-svg.svg" 
-              alt="DocuShield Logo" 
-              className="h-16 md:h-20 w-auto"
-            />
+            <Link href="/" className="hover:opacity-80 transition-opacity duration-200">
+              <img 
+                src="/docushield-logo-svg.svg" 
+                alt="DocuShield Logo" 
+                className="h-16 md:h-20 w-auto cursor-pointer"
+              />
+            </Link>
           </div>
           
           {/* Hero Illustration */}
@@ -185,12 +177,29 @@ export default function Home() {
             </div>
           </div>
           
-          <p className="text-xl text-gray-600 mb-2 font-medium">
-            AI-Powered Document Intelligence with Digital Twin Technology
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+            Enterprise Document Intelligence
+          </h1>
+          <p className="text-xl text-gray-600 mb-6 font-medium">
+            Transform your document workflows with AI-powered analysis, risk assessment, and intelligent insights
           </p>
-          <p className="text-sm text-gray-500">
-            Powered by Multi-Cluster TiDB Serverless + LLM Factory (OpenAI, Anthropic, Gemini, Groq)
+          <p className="text-sm text-gray-500 mb-8">
+            Secure • Scalable • Enterprise-Ready • Multi-LLM Architecture
           </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Link
+              href="/upload"
+              className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors duration-200 font-semibold"
+            >
+              Start Analyzing Documents
+            </Link>
+            <Link
+              href="/about"
+              className="bg-white text-blue-600 px-8 py-3 rounded-lg border-2 border-blue-600 hover:bg-blue-50 transition-colors duration-200 font-semibold"
+            >
+              Learn More
+            </Link>
+          </div>
         </div>
 
         {/* Navigation Cards */}
@@ -256,71 +265,7 @@ export default function Home() {
           </Link>
         </div>
 
-        {/* Stats Section */}
-        {!loading && (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-            {/* Contract Stats */}
-            <div className="bg-white p-6 rounded-xl shadow-md">
-              <h3 className="text-lg font-semibold mb-4">📋 Contract Stats</h3>
-              {dashboardData ? (
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <span>Total Contracts:</span>
-                    <span className="font-semibold">{dashboardData.overview.total_contracts}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Recent Alerts:</span>
-                    <span className="font-semibold text-red-600">{dashboardData.overview.recent_alerts}</span>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-gray-500">No data available</p>
-              )}
-            </div>
 
-            {/* Risk Distribution */}
-            <div className="bg-white p-6 rounded-xl shadow-md">
-              <h3 className="text-lg font-semibold mb-4">⚠️ Risk Distribution</h3>
-              {dashboardData?.risk_distribution ? (
-                <div className="space-y-2">
-                  {Object.entries(dashboardData.risk_distribution).map(([level, count]) => (
-                    <div key={level} className="flex justify-between items-center">
-                      <span className={`px-2 py-1 rounded text-sm ${getRiskColor(level)}`}>
-                        {level.charAt(0).toUpperCase() + level.slice(1)}
-                      </span>
-                      <span className="font-semibold">{count}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-500">No risk data available</p>
-              )}
-            </div>
-
-            {/* Provider Status */}
-            <div className="bg-white p-6 rounded-xl shadow-md">
-              <h3 className="text-lg font-semibold mb-4">🤖 AI Providers</h3>
-              {providerStatus && providerStatus.providers && Object.keys(providerStatus.providers).length > 0 ? (
-                <div className="space-y-2">
-                  {Object.entries(providerStatus.providers).map(([provider, status]) => (
-                    <div key={provider} className="flex justify-between items-center">
-                      <span className="capitalize">{provider}</span>
-                      <span className={`px-2 py-1 rounded text-xs ${
-                        (status && typeof status === 'object' && status.available) ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
-                      }`}>
-                        {(status && typeof status === 'object' && status.available) ? 'Online' : 'Offline'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : loading ? (
-                <p className="text-gray-500">Loading provider status...</p>
-              ) : (
-                <p className="text-gray-500">No providers available</p>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Features Section */}
         <div className="bg-white rounded-xl shadow-md p-8 mb-12">

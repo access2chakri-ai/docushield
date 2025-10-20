@@ -1,55 +1,69 @@
 <svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Gradient Background -->
   <defs>
-    <linearGradient id="docGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#f8fafc;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#e2e8f0;stop-opacity:1" />
+    <linearGradient id="doc-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#fefefe;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#f9fafb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f3f4f6;stop-opacity:1" />
     </linearGradient>
-    
-    <!-- Document icons pattern -->
-    <pattern id="docPattern" x="0" y="0" width="200" height="200" patternUnits="userSpaceOnUse">
-      <rect width="200" height="200" fill="transparent"/>
-      <g opacity="0.03">
-        <!-- Document icon -->
-        <rect x="50" y="40" width="60" height="80" rx="4" fill="#3b82f6"/>
-        <rect x="55" y="50" width="50" height="2" fill="#ffffff"/>
-        <rect x="55" y="60" width="40" height="2" fill="#ffffff"/>
-        <rect x="55" y="70" width="45" height="2" fill="#ffffff"/>
-        <rect x="55" y="80" width="35" height="2" fill="#ffffff"/>
-        
-        <!-- Folder icon -->
-        <path d="M130 60 L140 60 L145 70 L180 70 L180 110 L130 110 Z" fill="#10b981"/>
-        <rect x="135" y="75" width="40" height="2" fill="#ffffff"/>
-        <rect x="135" y="85" width="35" height="2" fill="#ffffff"/>
-        <rect x="135" y="95" width="30" height="2" fill="#ffffff"/>
-      </g>
+    <pattern id="doc-pattern" width="60" height="60" patternUnits="userSpaceOnUse">
+      <circle cx="30" cy="30" r="1" fill="#e5e7eb" opacity="0.3"/>
     </pattern>
-    
-    <!-- Floating particles -->
-    <circle id="particle" r="1" fill="#3b82f6" opacity="0.1">
-      <animate attributeName="opacity" values="0.1;0.3;0.1" dur="4s" repeatCount="indefinite"/>
-    </circle>
   </defs>
   
-  <!-- Base gradient -->
-  <rect width="1920" height="1080" fill="url(#docGradient)"/>
+  <!-- Background -->
+  <rect width="1920" height="1080" fill="url(#doc-gradient)"/>
+  <rect width="1920" height="1080" fill="url(#doc-pattern)"/>
   
-  <!-- Document pattern overlay -->
-  <rect width="1920" height="1080" fill="url(#docPattern)"/>
+  <!-- Floating Document Elements -->
+  <g opacity="0.2">
+    <!-- Document Stack 1 -->
+    <rect x="150" y="150" width="80" height="100" fill="#3b82f6" rx="4" transform="rotate(-5 190 200)"/>
+    <rect x="155" y="145" width="80" height="100" fill="#60a5fa" rx="4" transform="rotate(-3 195 195)"/>
+    <rect x="160" y="140" width="80" height="100" fill="#93c5fd" rx="4" transform="rotate(-1 200 190)"/>
+    
+    <!-- Document Stack 2 -->
+    <rect x="1600" y="300" width="80" height="100" fill="#10b981" rx="4" transform="rotate(8 1640 350)"/>
+    <rect x="1605" y="295" width="80" height="100" fill="#34d399" rx="4" transform="rotate(6 1645 345)"/>
+    <rect x="1610" y="290" width="80" height="100" fill="#6ee7b7" rx="4" transform="rotate(4 1650 340)"/>
+    
+    <!-- Document Stack 3 -->
+    <rect x="300" y="700" width="80" height="100" fill="#8b5cf6" rx="4" transform="rotate(-8 340 750)"/>
+    <rect x="305" y="695" width="80" height="100" fill="#a78bfa" rx="4" transform="rotate(-6 345 745)"/>
+    <rect x="310" y="690" width="80" height="100" fill="#c4b5fd" rx="4" transform="rotate(-4 350 740)"/>
+    
+    <!-- Document Stack 4 -->
+    <rect x="1400" y="700" width="80" height="100" fill="#f59e0b" rx="4" transform="rotate(5 1440 750)"/>
+    <rect x="1405" y="695" width="80" height="100" fill="#fbbf24" rx="4" transform="rotate(3 1445 745)"/>
+    <rect x="1410" y="690" width="80" height="100" fill="#fcd34d" rx="4" transform="rotate(1 1450 740)"/>
+  </g>
   
-  <!-- Floating particles -->
-  <use href="#particle" x="200" y="150"/>
-  <use href="#particle" x="800" y="300"/>
-  <use href="#particle" x="1400" y="200"/>
-  <use href="#particle" x="600" y="600"/>
-  <use href="#particle" x="1200" y="800"/>
-  <use href="#particle" x="300" y="900"/>
-  <use href="#particle" x="1600" y="700"/>
+  <!-- AI Processing Lines -->
+  <g opacity="0.25">
+    <path d="M 100 400 Q 300 350 500 400 Q 700 450 900 400 Q 1100 350 1300 400 Q 1500 450 1700 400" 
+          stroke="#3b82f6" stroke-width="2" fill="none" stroke-dasharray="5,5">
+      <animate attributeName="stroke-dashoffset" values="0;-10" dur="2s" repeatCount="indefinite"/>
+    </path>
+    <path d="M 100 500 Q 300 550 500 500 Q 700 450 900 500 Q 1100 550 1300 500 Q 1500 450 1700 500" 
+          stroke="#10b981" stroke-width="2" fill="none" stroke-dasharray="5,5">
+      <animate attributeName="stroke-dashoffset" values="0;-10" dur="3s" repeatCount="indefinite"/>
+    </path>
+  </g>
   
-  <!-- Subtle geometric shapes -->
-  <g opacity="0.02">
-    <polygon points="100,50 150,100 100,150 50,100" fill="#8b5cf6"/>
-    <polygon points="1700,200 1750,250 1700,300 1650,250" fill="#06b6d4"/>
-    <polygon points="400,800 450,850 400,900 350,850" fill="#f59e0b"/>
-    <polygon points="1300,600 1350,650 1300,700 1250,650" fill="#ef4444"/>
+  <!-- Subtle Icons -->
+  <g opacity="0.18">
+    <!-- Search Icon -->
+    <circle cx="800" cy="200" r="20" fill="none" stroke="#64748b" stroke-width="3"/>
+    <path d="815 215 l10 10" stroke="#64748b" stroke-width="3"/>
+    
+    <!-- Shield Icon -->
+    <path d="M 1200 150 Q 1200 140 1210 140 Q 1220 140 1220 150 L 1220 170 Q 1220 180 1210 185 Q 1200 180 1200 170 Z" 
+          fill="#64748b"/>
+    
+    <!-- Analytics Icon -->
+    <rect x="600" y="800" width="8" height="30" fill="#64748b"/>
+    <rect x="615" y="790" width="8" height="40" fill="#64748b"/>
+    <rect x="630" y="785" width="8" height="45" fill="#64748b"/>
+    <rect x="645" y="780" width="8" height="50" fill="#64748b"/>
   </g>
 </svg>

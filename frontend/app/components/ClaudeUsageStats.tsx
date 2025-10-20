@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { authenticatedFetch } from '@/utils/auth';
-import { config } from '@/utils/config';
+import { authenticatedFetch } from '../../utils/auth';
+import { config } from '../../utils/config';
 
 interface LLMUsageStats {
   summary: {

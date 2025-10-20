@@ -72,3 +72,112 @@ def _invoke_agentcore_sync(payload: Dict[str, Any], session_id: Optional[str] = 
 
     # Fallback raw
     return {"raw": {"contentType": ctype}}
+
+# =============================================================================
+# 🧠 AGENTCORE MEMORY INTEGRATION
+# =============================================================================
+
+class AgentCoreMemoryService:
+    """Service for integrating with AgentCore Memory for user personalization"""
+    
+    def __init__(self):
+        self.memory_client = None
+        self.memory_id = None
+        self._initialize_memory()
+    
+    def _initialize_memory(self):
+        """Initialize AgentCore Memory client and resources"""
+        try:
+            # For now, we'll use a simple in-memory approach
+            # In production, this would connect to actual AgentCore Memory
+            logger.info("AgentCore Memory service initialized (mock mode)")
+        except Exception as e:
+            logger.warning(f"AgentCore Memory initialization failed: {e}")
+    
+    def store_user_preferences(self, user_id: str, preferences: Dict[str, Any]) -> bool:
+        """Store user preferences in AgentCore Memory"""
+        try:
+            # Mock implementation - in production this would use AgentCore Memory API
+            logger.info(f"Storing preferences for user {user_id}: {preferences}")
+            
+            # Here you would call AgentCore Memory to store:
+            # - Document type preferences
+            # - Risk level focus areas
+            # - Time range preferences
+            # - Dashboard interaction patterns
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to store user preferences: {e}")
+            return False
+    
+    def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
+        """Retrieve user preferences from AgentCore Memory"""
+        try:
+            # Mock implementation - in production this would query AgentCore Memory
+            logger.info(f"Retrieving preferences for user {user_id}")
+            
+            # Here you would call AgentCore Memory to retrieve:
+            # - Learned user patterns
+            # - Preference recommendations
+            # - Behavioral insights
+            
+            return {
+                "learned_patterns": {},
+                "recommendations": [],
+                "confidence_score": 0.0
+            }
+        except Exception as e:
+            logger.error(f"Failed to get user preferences: {e}")
+            return {}
+    
+    def track_user_activity(self, user_id: str, activity: Dict[str, Any]) -> bool:
+        """Track user activity for learning preferences"""
+        try:
+            # Mock implementation - in production this would send to AgentCore Memory
+            logger.info(f"Tracking activity for user {user_id}: {activity}")
+            
+            # Here you would send activity data to AgentCore Memory:
+            # - Dashboard views and interactions
+            # - Filter usage patterns
+            # - Time spent on different sections
+            # - Document types analyzed
+            
+            return True
+        except Exception as e:
+            logger.error(f"Failed to track user activity: {e}")
+            return False
+    
+    def get_personalized_recommendations(self, user_id: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Get personalized recommendations based on user patterns"""
+        try:
+            # Mock implementation - in production this would use AgentCore Memory insights
+            logger.info(f"Getting recommendations for user {user_id}")
+            
+            # Here you would get AI-powered recommendations:
+            # - Suggested dashboard views
+            # - Documents that need attention
+            # - Optimal filter combinations
+            # - Productivity insights
+            
+            return {
+                "dashboard_suggestions": [
+                    "Focus on high-risk contracts from last 7 days",
+                    "Review pending document analysis"
+                ],
+                "filter_suggestions": {
+                    "document_types": ["contract", "invoice"],
+                    "risk_levels": ["high", "critical"],
+                    "time_range": "30d"
+                },
+                "insights": [
+                    "You typically analyze contracts on Monday mornings",
+                    "Your focus areas are financial and legal risks"
+                ]
+            }
+        except Exception as e:
+            logger.error(f"Failed to get recommendations: {e}")
+            return {}
+
+# Global instance
+agentcore_memory = AgentCoreMemoryService()

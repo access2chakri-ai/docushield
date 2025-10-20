@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
-import { config } from '@/utils/config';
-import DocumentTypeFilter from '@/app/components/DocumentTypeFilter';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '../../utils/auth';
+import { config } from '../../utils/config';
+import DocumentTypeFilter from '../components/DocumentTypeFilter';
 
 
 interface Message {
@@ -73,7 +73,7 @@ export default function ChatPage() {
     }
 
     // Check if a specific document was selected
-    const documentId = searchParams.get('document');
+    const documentId = searchParams?.get('document');
     if (documentId) {
       setSelectedDocument(documentId);
     }

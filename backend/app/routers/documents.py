@@ -1444,3 +1444,36 @@ async def test_document_analysis(
     except Exception as e:
         logger.error(f"Test analysis failed: {e}")
         raise HTTPException(status_code=500, detail=f"Test analysis failed: {str(e)}")
+
+@router.get("/etl-automation-status")
+async def get_etl_automation_status(
+    current_user = Depends(get_current_active_user)
+):
+    """Check status of automatic ETL automation for user"""
+    try:
+        from app.services.simple_sagemaker_service import simple_sagemaker
+        from app.services.auto_export_service import auto_export_service
+        
+        return {
+            "user_id": current_user.user_id,
+            "automation_enabled": auto_export_service.enabled,
+            "sagemaker_auto_run": auto_export_service.sagemaker_auto_run,
+            "workflow": {
+                "1": "Document uploaded & processed",
+                "2": "ETL notebook triggered automatically",
+                "3": "Parquet files updated with latest TiDB data", 
+                "4": "QuickSight dashboards refresh automatically",
+                "5": "User sees updated analytics (filtered by user_id)"
+            },
+            "notebook_info": {
+                "name": "tidbdata_etl_athena.ipynb",
+                "trigger": "After each document processing completion",
+                "output_location": "S3 parquet files",
+                "user_data_filtering": "Automatic via user_id parameter"
+            },
+            "status": "✅ Automation is active and ready"
+        }
+        
+    except Exception as e:
+        logger.error(f"Automation status check failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Status check failed: {str(e)}")

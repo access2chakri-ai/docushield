@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated } from '@/utils/auth';
+import { getUserData, isAuthenticated } from '../../utils/auth';
 
 export default function AdminPage() {
   const [user, setUser] = useState<any>(null);

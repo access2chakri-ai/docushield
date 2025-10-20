@@ -161,6 +161,18 @@ class DocumentProcessor:
                 await db.commit()
                 
                 logger.info(f"Processing run {processing_run.run_id} completed successfully")
+                
+                # 🚀 AUTOMATIC NOTEBOOK TRIGGER - Execute your ETL notebook after processing
+                try:
+                    from app.services.auto_export_service import auto_export_service
+                    trigger_result = await auto_export_service.trigger_after_document_processing(
+                        contract_id=contract_id, 
+                        user_id=user_id
+                    )
+                    logger.info(f"📓 Notebook ETL trigger result: {trigger_result.get('status')}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Notebook trigger failed (non-critical): {e}")
+                
                 return processing_run.run_id
                 
             except Exception as e:

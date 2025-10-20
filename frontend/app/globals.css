@@ -2,489 +2,214 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom Animations for Digital Twin */
-@keyframes blob {
-  0% {
-    transform: translate(0px, 0px) scale(1);
-  }
-  33% {
-    transform: translate(30px, -50px) scale(1.1);
-  }
-  66% {
-    transform: translate(-20px, 20px) scale(0.9);
-  }
-  100% {
-    transform: translate(0px, 0px) scale(1);
-  }
-}
+/* Custom Animations and Styles for DocuShield */
 
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(40px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
+/* Floating Document Animation */
 @keyframes float {
-  0%, 100% {
-    transform: translateY(0px);
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(2deg); }
+}
+
+.floating-document {
+  animation: float 6s ease-in-out infinite;
+  position: absolute;
+  opacity: 0.1;
+  pointer-events: none;
+}
+
+/* Data Flow Animation - Disabled for cleaner look */
+@keyframes dataFlow {
+  0% { 
+    transform: translateX(-100px) translateY(0px);
+    opacity: 0;
   }
-  50% {
-    transform: translateY(-10px);
+  50% { 
+    opacity: 0.1;
+  }
+  100% { 
+    transform: translateX(100vw) translateY(-20px);
+    opacity: 0;
   }
 }
 
-@keyframes glow {
-  0%, 100% {
-    box-shadow: 0 0 5px rgba(59, 130, 246, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.8);
-  }
+.data-flow {
+  position: absolute;
+  width: 1px;
+  height: 100vh;
+  background: linear-gradient(to bottom, transparent, #e2e8f0, transparent);
+  animation: dataFlow 12s linear infinite;
+  pointer-events: none;
+  opacity: 0.3;
 }
 
-.animate-blob {
-  animation: blob 7s infinite;
+/* Background Patterns */
+.bg-documents-pattern {
+  background-image: 
+    radial-gradient(circle at 25% 25%, #f0f9ff 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, #fef3c7 0%, transparent 50%),
+    radial-gradient(circle at 75% 25%, #f3e8ff 0%, transparent 50%),
+    radial-gradient(circle at 25% 75%, #ecfdf5 0%, transparent 50%);
 }
 
-.animate-fade-in {
-  animation: fade-in 0.6s ease-out forwards;
-}
-
-.animate-slide-up {
-  animation: slide-up 0.8s ease-out forwards;
-}
-
-.animate-float {
-  animation: float 3s ease-in-out infinite;
-}
-
-.animate-glow {
-  animation: glow 2s ease-in-out infinite;
-}
-
-.animation-delay-2000 {
-  animation-delay: 2s;
-}
-
-.animation-delay-4000 {
-  animation-delay: 4s;
-}
-
-/* Glass morphism effect */
+/* Glassmorphism Effect */
 .glass {
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-/* Gradient text */
+/* Gradient Text */
 .gradient-text {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6, #ec4899);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* Hover effects */
-.hover-lift {
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
 }
 
-.hover-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
 }
 
-/* Custom scrollbar */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 10px;
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 10px;
+/* Smooth Transitions - Only for interactive elements */
+button, a, input, select, textarea {
+  transition: all 0.2s ease-in-out;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+/* Disable animations for pages that need instant loading */
+.no-animations * {
+  animation: none !important;
+  transition: none !important;
 }
 
-/* Loading spinner */
-@keyframes spinner {
-  0% {
-    transform: rotate(0deg);
+/* Button Hover Effects */
+.btn-primary {
+  @apply bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold;
+  @apply hover:bg-blue-700 hover:shadow-lg hover:-translate-y-0.5;
+  @apply active:translate-y-0 active:shadow-md;
+  @apply transition-all duration-200;
+}
+
+.btn-secondary {
+  @apply bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold border-2 border-blue-600;
+  @apply hover:bg-blue-50 hover:shadow-lg hover:-translate-y-0.5;
+  @apply active:translate-y-0 active:shadow-md;
+  @apply transition-all duration-200;
+}
+
+/* Card Hover Effects */
+.card-hover {
+  @apply transition-all duration-300 ease-in-out;
+  @apply hover:shadow-xl hover:-translate-y-2 hover:scale-105;
+}
+
+/* Loading Animation */
+@keyframes pulse-glow {
+  0%, 100% { 
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
   }
-  100% {
-    transform: rotate(360deg);
-  }
-}
-
-.animate-spinner {
-  animation: spinner 1s linear infinite;
-}
-
-/* Document icons animation */
-@keyframes document-float {
-  0%, 100% {
-    transform: translateY(0px) rotate(0deg);
-  }
-  25% {
-    transform: translateY(-5px) rotate(1deg);
-  }
-  75% {
-    transform: translateY(5px) rotate(-1deg);
-  }
-}
-
-.animate-document-float {
-  animation: document-float 4s ease-in-out infinite;
-}
-
-/* Progress bar animation */
-@keyframes progress-fill {
-  from {
-    width: 0%;
-  }
-  to {
-    width: var(--progress-width);
+  50% { 
+    box-shadow: 0 0 30px rgba(59, 130, 246, 0.6);
   }
 }
 
-.animate-progress {
-  animation: progress-fill 1.5s ease-out forwards;
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
 }
 
-@layer base {
-  html {
-    font-family: system-ui, sans-serif;
-  }
-  
-  body {
-    @apply text-gray-900 bg-white;
-  }
+/* Status Indicators */
+.status-online {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  @apply bg-green-100 text-green-800;
 }
 
-@layer components {
-  .btn-primary {
-    @apply bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
-  }
-  
-  .btn-secondary {
-    @apply bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors duration-200;
-  }
-  
-  .btn-danger {
-    @apply bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
-  }
-  
-  .card {
-    @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6;
-  }
-  
-  .input-field {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
-  }
+.status-offline {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  @apply bg-red-100 text-red-800;
 }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+.status-processing {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  @apply bg-yellow-100 text-yellow-800;
 }
 
-/* Performance-optimized background system for DocuShield */
-.bg-documents-pattern {
-  background-image: 
-    url('/backgrounds/documents-bg.svg'),
-    linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(147, 197, 253, 0.05) 100%),
-    radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(34, 197, 94, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 40% 40%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
-  background-attachment: fixed, fixed, fixed, fixed, fixed;
-  background-size: cover, 100% 100%, 800px 800px, 600px 600px, 400px 400px;
-  background-repeat: no-repeat;
-  background-position: center, center, 20% 80%, 80% 20%, 40% 40%;
+/* Dashboard Specific Styles */
+.dashboard-card {
+  @apply bg-white/90 backdrop-blur-md rounded-xl shadow-lg border border-white/20;
+  @apply hover:shadow-xl hover:bg-white/95 transition-all duration-300;
 }
 
-.bg-upload-pattern {
-  background-image: 
-    url('/backgrounds/upload-bg.svg'),
-    linear-gradient(135deg, rgba(34, 197, 94, 0.05) 0%, rgba(134, 239, 172, 0.05) 100%),
-    radial-gradient(circle at 25% 25%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 75% 75%, rgba(168, 85, 247, 0.08) 0%, transparent 50%);
-  background-attachment: fixed, fixed, fixed, fixed;
-  background-size: cover, 100% 100%, 700px 700px, 500px 500px;
-  background-repeat: no-repeat;
-  background-position: center, center, 25% 25%, 75% 75%;
+.metric-card {
+  @apply bg-gradient-to-br from-white to-gray-50 rounded-lg p-6 shadow-md;
+  @apply hover:shadow-lg hover:-translate-y-1 transition-all duration-200;
 }
 
-.bg-chat-pattern {
-  background-image: 
-    url('/backgrounds/chat-bg.svg'),
-    linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(196, 181, 253, 0.05) 100%),
-    radial-gradient(circle at 30% 70%, rgba(34, 197, 94, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 70% 30%, rgba(59, 130, 246, 0.08) 0%, transparent 50%);
-  background-attachment: fixed, fixed, fixed, fixed;
-  background-size: cover, 100% 100%, 600px 600px, 800px 800px;
-  background-repeat: no-repeat;
-  background-position: center, center, 30% 70%, 70% 30%;
+/* Typography */
+.heading-primary {
+  @apply text-4xl md:text-5xl font-bold text-gray-900 leading-tight;
 }
 
-.bg-search-pattern {
-  background-image: 
-    url('/backgrounds/search-bg.svg'),
-    linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(165, 180, 252, 0.05) 100%),
-    radial-gradient(circle at 60% 40%, rgba(168, 85, 247, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 20% 60%, rgba(34, 197, 94, 0.08) 0%, transparent 50%);
-  background-attachment: fixed, fixed, fixed, fixed;
-  background-size: cover, 100% 100%, 750px 750px, 450px 450px;
-  background-repeat: no-repeat;
-  background-position: center, center, 60% 40%, 20% 60%;
+.heading-secondary {
+  @apply text-2xl md:text-3xl font-semibold text-gray-800;
 }
 
-.bg-dashboard-pattern {
-  background-image: 
-    url('/backgrounds/dashboard-bg.svg'),
-    linear-gradient(135deg, rgba(239, 68, 68, 0.03) 0%, rgba(252, 165, 165, 0.03) 100%),
-    radial-gradient(circle at 50% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 80% 80%, rgba(34, 197, 94, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 20% 50%, rgba(168, 85, 247, 0.06) 0%, transparent 50%);
-  background-attachment: fixed, fixed, fixed, fixed, fixed;
-  background-size: cover, 100% 100%, 900px 900px, 600px 600px, 400px 400px;
-  background-repeat: no-repeat;
-  background-position: center, center, 50% 20%, 80% 80%, 20% 50%;
+.text-muted {
+  @apply text-gray-600;
 }
 
-.bg-auth-pattern {
-  background-image: 
-    url('/backgrounds/auth-bg.svg'),
-    linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(147, 197, 253, 0.08) 100%),
-    radial-gradient(circle at 40% 60%, rgba(168, 85, 247, 0.12) 0%, transparent 60%),
-    radial-gradient(circle at 80% 40%, rgba(34, 197, 94, 0.1) 0%, transparent 60%);
-  background-attachment: fixed, fixed, fixed, fixed;
-  background-size: cover, 100% 100%, 800px 800px, 600px 600px;
-  background-repeat: no-repeat;
-  background-position: center, center, 40% 60%, 80% 40%;
-}
-
-.bg-digital-twin-pattern {
-  background-image: 
-    url('/backgrounds/digital-twin-bg.svg'),
-    linear-gradient(135deg, rgba(249, 115, 22, 0.05) 0%, rgba(254, 215, 170, 0.05) 100%),
-    radial-gradient(circle at 30% 30%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
-    radial-gradient(circle at 70% 70%, rgba(168, 85, 247, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 50% 80%, rgba(34, 197, 94, 0.06) 0%, transparent 50%);
-  background-attachment: fixed, fixed, fixed, fixed, fixed;
-  background-size: cover, 100% 100%, 700px 700px, 500px 500px, 300px 300px;
-  background-repeat: no-repeat;
-  background-position: center, center, 30% 30%, 70% 70%, 50% 80%;
-}
-
-/* Animated document processing elements */
-.floating-document {
-  position: absolute;
-  opacity: 0.1;
-  animation: documentFloat 8s ease-in-out infinite;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.floating-document:nth-child(1) { animation-delay: 0s; }
-.floating-document:nth-child(2) { animation-delay: 2s; }
-.floating-document:nth-child(3) { animation-delay: 4s; }
-.floating-document:nth-child(4) { animation-delay: 6s; }
-
-@keyframes documentFloat {
-  0%, 100% {
-    transform: translateY(0px) rotate(0deg) scale(1);
-    opacity: 0.05;
-  }
-  25% {
-    transform: translateY(-20px) rotate(2deg) scale(1.05);
-    opacity: 0.1;
-  }
-  50% {
-    transform: translateY(-10px) rotate(-1deg) scale(0.95);
-    opacity: 0.15;
-  }
-  75% {
-    transform: translateY(-30px) rotate(1deg) scale(1.02);
-    opacity: 0.08;
-  }
-}
-
-/* Processing animation for upload and processing pages */
-.processing-dots {
-  display: inline-flex;
-  gap: 4px;
-}
-
-.processing-dots::after {
-  content: '';
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: processingPulse 1.5s ease-in-out infinite;
-}
-
-.processing-dots::before {
-  content: '';
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: currentColor;
-  animation: processingPulse 1.5s ease-in-out infinite 0.3s;
-}
-
-@keyframes processingPulse {
-  0%, 80%, 100% {
-    transform: scale(0);
-    opacity: 0.5;
-  }
-  40% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-/* Subtle data flow animation */
-.data-flow {
-  position: absolute;
-  width: 2px;
-  height: 20px;
-  background: linear-gradient(to bottom, transparent, rgba(59, 130, 246, 0.3), transparent);
-  animation: dataFlow 3s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes dataFlow {
-  0% {
-    transform: translateY(-100px);
-    opacity: 0;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(100vh);
-    opacity: 0;
-  }
-}
-
-/* Responsive background adjustments */
-@media (max-width: 768px) {
-  .bg-documents-pattern,
-  .bg-upload-pattern,
-  .bg-chat-pattern,
-  .bg-search-pattern,
-  .bg-dashboard-pattern,
-  .bg-auth-pattern,
-  .bg-digital-twin-pattern {
-    background-attachment: scroll, scroll, scroll, scroll, scroll;
-    background-size: cover, 100% 100%, 400px 400px, 300px 300px, 200px 200px;
-    /* Simplify SVG backgrounds on mobile for performance */
-    background-image: 
-      linear-gradient(135deg, rgba(59, 130, 246, 0.03) 0%, rgba(147, 197, 253, 0.03) 100%),
-      radial-gradient(circle at 50% 50%, rgba(99, 102, 241, 0.05) 0%, transparent 70%);
-    background-size: 100% 100%, 600px 600px;
-    background-position: center, center;
-  }
-  
+/* Responsive Design Helpers */
+@media (max-width: 640px) {
   .floating-document {
-    display: none; /* Hide floating elements on mobile for performance */
-  }
-  
-  .data-flow {
-    display: none; /* Hide data flow on mobile */
-  }
-}
-
-@media (max-width: 480px) {
-  .bg-documents-pattern,
-  .bg-upload-pattern,
-  .bg-chat-pattern,
-  .bg-search-pattern,
-  .bg-dashboard-pattern,
-  .bg-auth-pattern,
-  .bg-digital-twin-pattern {
-    /* Minimal background on very small screens */
-    background-image: linear-gradient(135deg, rgba(59, 130, 246, 0.02) 0%, rgba(147, 197, 253, 0.02) 100%);
-    background-size: 100% 100%;
-    background-position: center;
-  }
-}
-
-/* High contrast mode support */
-@media (prefers-contrast: high) {
-  .bg-documents-pattern,
-  .bg-upload-pattern,
-  .bg-chat-pattern,
-  .bg-search-pattern,
-  .bg-dashboard-pattern,
-  .bg-auth-pattern,
-  .bg-digital-twin-pattern {
-    background-image: none;
-    background-color: white;
-  }
-}
-
-/* Performance optimization for slow devices */
-@media (max-resolution: 1dppx) {
-  .floating-document,
-  .data-flow {
     display: none;
   }
   
-  .bg-documents-pattern,
-  .bg-upload-pattern,
-  .bg-chat-pattern,
-  .bg-search-pattern,
-  .bg-dashboard-pattern,
-  .bg-auth-pattern,
-  .bg-digital-twin-pattern {
-    background-attachment: scroll;
-    background-size: 100% 100%;
+  .data-flow {
+    display: none;
   }
 }
 
-/* Reduced motion preferences */
-@media (prefers-reduced-motion: reduce) {
+/* Dark Mode Support (Future Enhancement) */
+@media (prefers-color-scheme: dark) {
+  .glass {
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Print Styles */
+@media print {
   .floating-document,
   .data-flow,
-  .processing-dots::before,
-  .processing-dots::after {
-    animation: none;
+  .no-print {
+    display: none !important;
   }
-  
-  .bg-documents-pattern,
-  .bg-upload-pattern,
-  .bg-chat-pattern,
-  .bg-search-pattern,
-  .bg-dashboard-pattern,
-  .bg-auth-pattern,
-  .bg-digital-twin-pattern {
-    background-attachment: scroll;
+}
+
+/* Focus Styles for Accessibility */
+button:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+  .glass {
+    background: rgba(255, 255, 255, 0.9);
+    border: 2px solid #000;
   }
 }

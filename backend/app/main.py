@@ -29,7 +29,7 @@ else:
     logger.info("🔧 Configuration: Using AWS environment variables only")
 
 # Routers
-from app.routers import auth, documents, search, health, chat, analytics, llm, integrations, digital_twin, monitoring, providers, profile, mcp_search, conversational_ai, document_highlights
+from app.routers import auth, documents, search, health, chat, analytics, llm, integrations, digital_twin, monitoring, providers, profile, mcp_search, conversational_ai, document_highlights, sagemaker_integration, quicksight_embed, etl_monitoring, dashboards, user
 
 # Import dependencies that were previously imported inline
 from migrations.migration_runner import MigrationRunner
@@ -88,6 +88,11 @@ app.include_router(profile.router)
 app.include_router(mcp_search.router)
 app.include_router(conversational_ai.router)  # Enhanced conversational AI
 app.include_router(document_highlights.router)  # Document highlighting
+app.include_router(sagemaker_integration.router)  # SageMaker integration
+app.include_router(quicksight_embed.router)  # QuickSight embedding
+app.include_router(etl_monitoring.router)  # ETL monitoring dashboard
+app.include_router(dashboards.router)  # User-specific dashboards
+app.include_router(user.router)  # User profile and preferences
 
 # =============================================================================
 # STARTUP & HEALTH ENDPOINTS

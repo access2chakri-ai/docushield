@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     alert_email_from: str = os.getenv("ALERT_EMAIL_FROM", "alerts@docushield.com")
     alert_email_to: str = os.getenv("ALERT_EMAIL_TO", "")
     
+    # SageMaker Integration
+    sagemaker_bucket: str = os.getenv("SAGEMAKER_BUCKET", "sagemaker-us-east-1-192933326034")
+    auto_export_enabled: bool = os.getenv("AUTO_EXPORT_ENABLED", "true").lower() == "true"
+    sagemaker_auto_run_enabled: bool = os.getenv("SAGEMAKER_AUTO_RUN_ENABLED", "true").lower() == "true"
+    
     # Background Processing
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     celery_broker_url: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")

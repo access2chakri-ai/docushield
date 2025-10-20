@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ClaudeUsageStats from '../components/ClaudeUsageStats';
-import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
-import { config } from '@/utils/config';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '../../utils/auth';
+import { config } from '../../utils/config';
 
 interface ContractAnalysis {
   contract: {

@@ -2,20 +2,73 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { isAuthenticated, getUserData, logout, type User } from '@/utils/auth';
+import { isAuthenticated, getUserData, logout, type User } from '../../utils/auth';
 
 export default function UserMenu() {
   const [user, setUser] = useState<User | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
-  useEffect(() => {
+  // Function to refresh auth state
+  const refreshAuthState = () => {
+    if (!mounted) return;
     if (isAuthenticated()) {
       const currentUser = getUserData();
       setUser(currentUser);
+    } else {
+      setUser(null);
     }
+  };
+
+  useEffect(() => {
+    // Prevent hydration mismatch
+    setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    
+    // Initial auth check
+    refreshAuthState();
+    
+    // Listen for storage changes (when tokens are updated)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'docushield_access_token' || e.key === 'docushield_refresh_token' || e.key === 'docushield_user') {
+        refreshAuthState();
+      }
+    };
+    
+    // Listen for custom auth events
+    const handleAuthChange = () => {
+      refreshAuthState();
+    };
+    
+    // Listen for page focus/visibility changes (when user returns to tab)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        refreshAuthState();
+      }
+    };
+    
+    const handleFocus = () => {
+      refreshAuthState();
+    };
+    
+    // Event listeners - purely event-driven, no polling
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('auth-change', handleAuthChange);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('auth-change', handleAuthChange);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [mounted]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -34,8 +87,21 @@ export default function UserMenu() {
     await logout();
     setUser(null);
     setIsOpen(false);
+    
+    // Trigger auth change event for other components
+    window.dispatchEvent(new Event('auth-change'));
+    
     router.push('/auth');
   };
+
+  // Show loading state during hydration
+  if (!mounted) {
+    return (
+      <div className="bg-gray-200 animate-pulse px-4 py-2 rounded-md text-sm font-medium">
+        Loading...
+      </div>
+    );
+  }
 
   if (!user) {
     return (
