@@ -22,7 +22,8 @@ class QuickSightService:
         self.allowed_domains = [
             'http://localhost:3000',
             'https://main.d2be5wdxfumfls.amplifyapp.com',
-            'https://your-domain.com'  # Replace with actual production domain
+            'https://docushield.poweropsusa.com',
+            'https://poweropsusa.com'
         ]
         
     def get_embed_url_for_registered_user(self, dashboard_id: str, user_arn: str) -> Optional[str]:

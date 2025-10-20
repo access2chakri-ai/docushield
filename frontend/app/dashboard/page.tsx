@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import ClaudeUsageStats from '../components/ClaudeUsageStats';
+
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '../../utils/auth';
 import { config } from '../../utils/config';
 
@@ -428,10 +428,7 @@ export default function RiskDashboard() {
           )}
         </div>
 
-        {/* Claude Usage Stats */}
-        <div className="mt-8">
-          <ClaudeUsageStats />
-        </div>
+
 
         {/* Contract Details Modal */}
         {selectedContract && (
