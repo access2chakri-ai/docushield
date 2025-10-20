@@ -70,6 +70,15 @@ from app.core.config import settings
 from app.models import LlmCall
 from app.database import get_operational_db
 
+# Privacy protection warning
+import warnings
+warnings.warn(
+    "LLMFactory should not be used directly for document content. "
+    "Use PrivacySafeLLMService instead to ensure PII protection.",
+    UserWarning,
+    stacklevel=2
+)
+
 logger = logging.getLogger(__name__)
 
 class LLMProvider(Enum):
@@ -781,8 +790,13 @@ class LLMFactory:
                 total_tokens = input_tokens + output_tokens
                 estimated_cost = self.cost_per_1k_tokens.get(provider, {}).get(model, 0.001) * (total_tokens / 1000)
                 
+                # Only use contract_id if it looks like a real UUID, otherwise set to None
+                real_contract_id = None
+                if contract_id and len(contract_id) == 36 and contract_id.count('-') == 4:
+                    real_contract_id = contract_id
+                
                 llm_call = LlmCall(
-                    contract_id=contract_id,
+                    contract_id=real_contract_id,
                     provider=provider.value,
                     model=model,
                     call_type=call_type,
@@ -793,7 +807,7 @@ class LLMFactory:
                     latency_ms=latency_ms,
                     success=success,
                     error_message=error_message,
-                    purpose=purpose
+                    purpose=purpose or contract_id  # Use original contract_id as purpose if it's not a real UUID
                 )
                 
                 db.add(llm_call)
@@ -981,6 +995,63 @@ class LLMFactory:
                 "estimated_cost": 0.0
             }
     
+    async def _openai_embedding(self, text: str) -> Dict[str, Any]:
+        """Generate embedding using OpenAI"""
+        if not OPENAI_AVAILABLE:
+            raise Exception("OpenAI package not available - install with: pip install openai")
+        
+        client = self.providers[LLMProvider.OPENAI]
+        
+        response = await client.embeddings.create(
+            model="text-embedding-3-small",
+            input=text
+        )
+        
+        embedding = response.data[0].embedding
+        input_tokens = response.usage.total_tokens
+        
+        return {
+            "embedding": embedding,
+            "model": "text-embedding-3-small",
+            "input_tokens": input_tokens
+        }
+    
+    async def _bedrock_embedding(self, text: str) -> Dict[str, Any]:
+        """Generate embedding using Amazon Bedrock Titan"""
+        if not BEDROCK_AVAILABLE:
+            raise Exception("boto3 package not available - install with: pip install boto3")
+        
+        client = self.providers[LLMProvider.BEDROCK]
+        
+        # Use Titan Embed Text v2 model
+        model_id = "amazon.titan-embed-text-v2:0"
+        
+        body = json.dumps({
+            "inputText": text,
+            "dimensions": 1024,  # Titan v2 supports up to 1024 dimensions
+            "normalize": True
+        })
+        
+        response = await asyncio.to_thread(
+            client.invoke_model,
+            modelId=model_id,
+            body=body,
+            contentType="application/json",
+            accept="application/json"
+        )
+        
+        response_body = json.loads(response['body'].read())
+        embedding = response_body['embedding']
+        
+        # Estimate tokens (Titan doesn't provide exact count)
+        estimated_tokens = len(text.split())
+        
+        return {
+            "embedding": embedding,
+            "model": model_id,
+            "input_tokens": estimated_tokens
+        }
+
     def _update_usage_stats(self, provider: LLMProvider, tokens: int, latency: int, success: bool):
         """Update provider usage statistics"""
         stats = self.usage_stats[provider]

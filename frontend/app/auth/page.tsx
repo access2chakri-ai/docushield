@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { login, register, resetPassword, isAuthenticated, type LoginRequest, type RegisterRequest } from '@/utils/auth';
+import { login, register, resetPassword, isAuthenticated, type LoginRequest, type RegisterRequest } from '../../utils/auth';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -120,15 +120,22 @@ export default function AuthPage() {
       <div className="floating-document bottom-28 left-1/6 text-6xl">🔑</div>
       <div className="floating-document bottom-16 right-1/5 text-5xl">✨</div>
       
-      {/* Security flow lines */}
-      <div className="data-flow top-0 left-1/4" style={{animationDelay: '1s'}}></div>
-      <div className="data-flow top-0 right-1/3" style={{animationDelay: '3s'}}></div>
+
       
       <div className="max-w-md w-full mx-4 relative z-10">
         <div className="bg-white rounded-xl shadow-lg p-8">
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">DocuShield</h1>
+            <Link href="/" className="inline-block hover:opacity-80 transition-opacity duration-200">
+              <div className="flex items-center justify-center space-x-3 mb-2">
+                <img 
+                  src="/docushield-logo-svg.svg" 
+                  alt="DocuShield Logo" 
+                  className="h-8 w-auto"
+                />
+                <h1 className="text-3xl font-bold text-gray-900 cursor-pointer">DocuShield</h1>
+              </div>
+            </Link>
             <p className="text-gray-600">
               {isLogin ? 'Welcome back!' : 'Create your account'}
             </p>

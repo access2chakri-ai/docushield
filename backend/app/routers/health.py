@@ -6,7 +6,7 @@ from sqlalchemy import text
 from typing import Optional
 
 from app.database import get_operational_db
-from app.services.llm_factory import llm_factory
+from app.services.privacy_safe_llm import privacy_safe_llm
 
 router = APIRouter(tags=["health"])
 
@@ -93,7 +93,7 @@ async def get_provider_status():
             db_status = "disconnected"
         
         # Get LLM provider status
-        llm_status = llm_factory.get_provider_status()
+        llm_status = await privacy_safe_llm.get_provider_status()
         
         return {
             "database": {

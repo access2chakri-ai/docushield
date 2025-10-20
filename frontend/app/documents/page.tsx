@@ -3,11 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated, logout, authenticatedFetch, type User } from '@/utils/auth';
-import { config } from '@/utils/config';
-import LoadingSpinner from '@/app/components/LoadingSpinner';
+import { getUserData, isAuthenticated, logout, authenticatedFetch, type User } from '../../utils/auth';
+import { config } from '../../utils/config';
+import LoadingSpinner from '../components/LoadingSpinner';
 
-// User interface is now imported from @/utils/auth
+// User interface is now imported from utils/auth
 
 interface Document {
   contract_id: string;

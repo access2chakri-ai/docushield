@@ -79,6 +79,8 @@ class ChatRequest(BaseModel):
     # New filtering options for chat
     document_types: Optional[List[str]] = None  # Filter documents by type
     industry_types: Optional[List[str]] = None  # Filter documents by industry
+    chat_mode: Optional[str] = "documents"  # "documents", "all_documents", "general"
+    search_all_documents: Optional[bool] = False  # Search across all user documents
 
 class RunRequest(BaseModel):
     query: str

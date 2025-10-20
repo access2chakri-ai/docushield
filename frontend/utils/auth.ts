@@ -183,6 +183,11 @@ export async function login(credentials: LoginRequest): Promise<User> {
   const userInfo = await getCurrentUser();
   storeUserData(userInfo);
   
+  // Trigger auth change event for components
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('auth-change'));
+  }
+  
   return userInfo;
 }
 
@@ -209,6 +214,11 @@ export async function register(userData: RegisterRequest): Promise<User> {
   // Get user data from token
   const userInfo = await getCurrentUser();
   storeUserData(userInfo);
+  
+  // Trigger auth change event for components
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('auth-change'));
+  }
   
   return userInfo;
 }

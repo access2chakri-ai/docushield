@@ -33,7 +33,7 @@ def fan_out_json_secret(env_name="DOCUSHIELD_CONFIG_JSON"):
         for key, value in data.items():
             if key not in os.environ:
                 os.environ[key] = str(value)
-                
+        
         # Log the configuration source for debugging
         logger = logging.getLogger(__name__)
         logger.info(f"🔧 Configuration: Loaded {len(data)} variables from {env_name}")

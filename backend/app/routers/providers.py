@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
 from app.core.dependencies import get_current_active_user
-from app.services.llm_factory import llm_factory, LLMProvider
+from app.services.privacy_safe_llm import privacy_safe_llm, LLMProvider
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 
@@ -18,9 +18,9 @@ async def get_provider_usage_stats(
 ):
     """Get LLM provider usage statistics in the format expected by frontend"""
     try:
-        # Get raw usage stats from LLM factory
-        raw_stats = getattr(llm_factory, 'usage_stats', {})
-        provider_status = llm_factory.get_provider_status()
+        # Get raw usage stats from privacy-safe LLM service
+        raw_stats = getattr(privacy_safe_llm.llm_factory, 'usage_stats', {})
+        provider_status = await privacy_safe_llm.get_provider_status()
         
         # Initialize totals
         total_calls = 0
@@ -102,7 +102,7 @@ async def get_provider_usage_stats(
 async def get_provider_status(current_user = Depends(get_current_active_user)):
     """Get status of all LLM providers"""
     try:
-        status = llm_factory.get_provider_status()
+        status = await privacy_safe_llm.get_provider_status()
         return {
             "user_id": current_user.user_id,
             "providers": status.get("providers", {}),

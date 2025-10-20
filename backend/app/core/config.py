@@ -68,7 +68,9 @@ class Settings(BaseSettings):
     
     # AgentCore
     use_bedrock_agentcore: bool = os.getenv("USE_BEDROCK_AGENTCORE", "false").lower() == "true"
-    agentcore_runtime_arn: str = os.getenv("AGENTCORE_RUNTIME_ARN", "")
+    agentcore_runtime_arn: str = os.getenv("AGENTCORE_RUNTIME_ARN", "")  # Legacy support
+    agentcore_runtime_arn_search: str = os.getenv("AGENTCORE_RUNTIME_ARN_SEARCH", "")
+    agentcore_runtime_arn_analysis: str = os.getenv("AGENTCORE_RUNTIME_ARN_ANALYSIS", "")
     agentcore_session_prefix: str = os.getenv("AGENTCORE_SESSION_PREFIX", "docushield")
     agentcore_timeout: float = float(os.getenv("AGENTCORE_TIMEOUT", "60"))
     
@@ -89,6 +91,11 @@ class Settings(BaseSettings):
     sendgrid_api_key: str = os.getenv("SENDGRID_API_KEY", "")
     alert_email_from: str = os.getenv("ALERT_EMAIL_FROM", "alerts@docushield.com")
     alert_email_to: str = os.getenv("ALERT_EMAIL_TO", "")
+    
+    # SageMaker Integration
+    sagemaker_bucket: str = os.getenv("SAGEMAKER_BUCKET", "sagemaker-us-east-1-192933326034")
+    auto_export_enabled: bool = os.getenv("AUTO_EXPORT_ENABLED", "true").lower() == "true"
+    sagemaker_auto_run_enabled: bool = os.getenv("SAGEMAKER_AUTO_RUN_ENABLED", "true").lower() == "true"
     
     # Background Processing
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")

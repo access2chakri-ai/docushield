@@ -5,6 +5,7 @@
 export const config = {
   // API Configuration
   apiBaseUrl: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000',
+  apiUrl: process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000', // Alias for compatibility
   apiTimeout: parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT || '120000'),
   
   // Feature flags
@@ -22,7 +23,7 @@ export const config = {
 
 // Validation function to ensure required config is present
 export function validateConfig() {
-  const required = ['apiBaseUrl'];
+  const required = ['apiBaseUrl', 'apiUrl'];
   const missing = required.filter(key => !config[key as keyof typeof config]);
   
   if (missing.length > 0) {
