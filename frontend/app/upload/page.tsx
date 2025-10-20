@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
-import { config } from '@/utils/config';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '../../utils/auth';
+import { config } from '../../utils/config';
 
 interface UploadedDocument {
   contract_id: string;

@@ -1,0 +1,56 @@
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Gradient Background -->
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8fafc;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#f1f5f9;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e2e8f0;stop-opacity:1" />
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" stroke-width="0.5" opacity="0.3"/>
+    </pattern>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1920" height="1080" fill="url(#bg-gradient)"/>
+  <rect width="1920" height="1080" fill="url(#grid)"/>
+  
+  <!-- Floating Chart Elements -->
+  <g opacity="0.25">
+    <!-- Bar Chart -->
+    <rect x="100" y="200" width="20" height="60" fill="#3b82f6" rx="2"/>
+    <rect x="130" y="180" width="20" height="80" fill="#3b82f6" rx="2"/>
+    <rect x="160" y="160" width="20" height="100" fill="#3b82f6" rx="2"/>
+    <rect x="190" y="140" width="20" height="120" fill="#3b82f6" rx="2"/>
+    
+    <!-- Line Chart -->
+    <path d="M 300 300 Q 350 280 400 290 Q 450 270 500 280 Q 550 260 600 270" stroke="#10b981" stroke-width="3" fill="none"/>
+    <circle cx="300" cy="300" r="4" fill="#10b981"/>
+    <circle cx="400" cy="290" r="4" fill="#10b981"/>
+    <circle cx="500" cy="280" r="4" fill="#10b981"/>
+    <circle cx="600" cy="270" r="4" fill="#10b981"/>
+    
+    <!-- Pie Chart -->
+    <circle cx="1600" cy="200" r="50" fill="none" stroke="#8b5cf6" stroke-width="8" stroke-dasharray="157 314"/>
+    <circle cx="1600" cy="200" r="50" fill="none" stroke="#f59e0b" stroke-width="8" stroke-dasharray="78 314" stroke-dashoffset="-157"/>
+    
+    <!-- Data Points -->
+    <circle cx="200" cy="800" r="3" fill="#ef4444" opacity="0.6"/>
+    <circle cx="250" cy="820" r="3" fill="#ef4444" opacity="0.6"/>
+    <circle cx="300" cy="780" r="3" fill="#ef4444" opacity="0.6"/>
+    <circle cx="350" cy="810" r="3" fill="#ef4444" opacity="0.6"/>
+    
+    <!-- Document Icons -->
+    <rect x="1400" y="800" width="30" height="40" fill="#64748b" rx="3" opacity="0.3"/>
+    <rect x="1440" y="790" width="30" height="40" fill="#64748b" rx="3" opacity="0.3"/>
+    <rect x="1480" y="810" width="30" height="40" fill="#64748b" rx="3" opacity="0.3"/>
+  </g>
+  
+  <!-- Subtle Geometric Shapes -->
+  <g opacity="0.15">
+    <polygon points="800,100 850,150 800,200 750,150" fill="#3b82f6"/>
+    <polygon points="1200,600 1250,650 1200,700 1150,650" fill="#10b981"/>
+    <circle cx="400" cy="600" r="30" fill="#8b5cf6"/>
+    <circle cx="1500" cy="400" r="25" fill="#f59e0b"/>
+  </g>
+</svg>

@@ -30,6 +30,13 @@ class User(Base):
     profile_photo_mime_type = Column(String(100), nullable=True)  # image/png, image/jpeg, etc.
     profile_photo_prompt = Column(Text, nullable=True)  # Prompt used to generate the photo
     
+    # Analytics preferences
+    analytics_preferences = Column(JSON, nullable=True)  # Dashboard filters, view preferences
+    dashboard_filters = Column(JSON, nullable=True)  # Saved filter combinations
+    preferred_document_types = Column(JSON, nullable=True)  # Array of preferred doc types
+    preferred_risk_levels = Column(JSON, nullable=True)  # Array of preferred risk levels
+    preferred_time_range = Column(String(50), default="30d")  # Default time range (7d, 30d, 90d)
+    
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     

@@ -11,10 +11,6 @@ from datetime import datetime
 from dataclasses import dataclass, asdict
 
 from .base_agent import BaseAgent, AgentContext, AgentResult, AgentStatus, AgentPriority
-from .search_agent import DocumentSearchAgent
-from .document_analyzer import DocumentAnalysisAgent
-from .clause_analyzer_agent import ClauseAnalysisAgent
-from .risk_analyzer_agent import RiskAnalysisAgent
 from app.database import get_operational_db
 from app.models import ProcessingRun, ProcessingStep
 
@@ -45,16 +41,31 @@ class DocumentOrchestrator:
     """
     
     def __init__(self):
-        # Initialize all agents with AWS Bedrock AgentCore compatible names
+        # Use agent factory to get properly configured agents (remote/local/agentcore)
+        from .agent_factory import agent_factory
+        
         self.agents = {
-            "document_search_agent": DocumentSearchAgent(),
-            "document_analysis_agent": DocumentAnalysisAgent(),
-            "clause_analysis_agent": ClauseAnalysisAgent(),
-            "risk_analysis_agent": RiskAnalysisAgent()
+            "document_search_agent": agent_factory.get_agent("document_search_agent"),
+            "document_analysis_agent": agent_factory.get_agent("document_analysis_agent"), 
+            "clause_analysis_agent": agent_factory.get_agent("clause_analysis_agent"),
+            "risk_analysis_agent": agent_factory.get_agent("risk_analysis_agent")
         }
         
         self.version = "3.0.0"
         self.logger = logging.getLogger("document_orchestrator")
+        
+        # Log which agents were loaded
+        for agent_name, agent in self.agents.items():
+            if agent:
+                agent_type = type(agent).__name__
+                if 'Remote' in agent_type:
+                    self.logger.info(f"🐳 Orchestrator loaded DOCKER agent for {agent_name}: {agent_type}")
+                elif 'AgentCore' in agent_type:
+                    self.logger.info(f"☁️ Orchestrator loaded AGENTCORE agent for {agent_name}: {agent_type}")
+                else:
+                    self.logger.info(f"🏠 Orchestrator loaded LOCAL agent for {agent_name}: {agent_type}")
+            else:
+                self.logger.warning(f"❌ Orchestrator failed to load agent: {agent_name}")
         
         # AWS Bedrock AgentCore compatibility
         self.agent_metadata = {
@@ -77,7 +88,7 @@ class DocumentOrchestrator:
         Main entry point for processing requests with intelligent routing
         """
         start_time = datetime.now()
-        run_id = f"run_{contract_id}_{int(start_time.timestamp())}"
+        run_id = f"run_{contract_id[:8]}_{int(start_time.timestamp())}"
         
         try:
             # Add timeout protection
@@ -136,7 +147,7 @@ class DocumentOrchestrator:
                 query=query,
                 document_type=document_type,
                 priority=priority,
-                timeout_seconds=30,  # Per-agent timeout
+                timeout_seconds=90,  # Per-agent timeout
                 cache_enabled=True
             )
             
@@ -262,13 +273,46 @@ class DocumentOrchestrator:
             agent_names = ["document_search_agent", "document_analysis_agent", 
                           "clause_analysis_agent", "risk_analysis_agent"]
             
-            # Handle each agent result
+            # Handle each agent result with MCP enhancement tracking
             for i, (agent_name, agent_result) in enumerate(zip(agent_names, agent_results)):
                 if isinstance(agent_result, Exception):
                     self.logger.error(f"{agent_name} failed: {agent_result}")
                 else:
                     results.append(agent_result)
-                    self.logger.info(f"✅ {agent_name} completed: {len(agent_result.findings)} findings")
+                    
+                    # Check for MCP-enhanced findings
+                    mcp_enhanced_count = 0
+                    external_sources = []
+                    
+                    if hasattr(agent_result, 'findings') and agent_result.findings:
+                        for finding in agent_result.findings:
+                            if isinstance(finding, dict) and finding.get('mcp_enhanced', False):
+                                mcp_enhanced_count += 1
+                                source_type = finding.get('source_type', 'unknown')
+                                if source_type not in external_sources:
+                                    external_sources.append(source_type)
+                    
+                    # Check data sources for MCP integration
+                    if hasattr(agent_result, 'data_sources') and agent_result.data_sources:
+                        mcp_sources = [s for s in agent_result.data_sources if s in ['web_search', 'legal_precedents', 'industry_intelligence', 'document_enrichment']]
+                        if mcp_sources:
+                            external_sources.extend(mcp_sources)
+                    
+                    # Log with MCP enhancement details
+                    if mcp_enhanced_count > 0 or external_sources:
+                        self.logger.info(f"✅ {agent_name} completed: {len(agent_result.findings)} findings")
+                        self.logger.info(f"   🌐 MCP Enhanced: {mcp_enhanced_count} findings")
+                        if external_sources:
+                            unique_sources = list(set(external_sources))
+                            self.logger.info(f"   📊 External Sources: {', '.join(unique_sources)}")
+                        
+                        # Log confidence boost from MCP
+                        if hasattr(agent_result, 'confidence'):
+                            confidence = agent_result.confidence
+                            if confidence > 0.8:  # High confidence likely indicates MCP enhancement
+                                self.logger.info(f"   🎯 High Confidence: {confidence:.2f} (likely MCP-enhanced)")
+                    else:
+                        self.logger.info(f"✅ {agent_name} completed: {len(agent_result.findings)} findings")
             
             return results
             
@@ -322,6 +366,36 @@ class DocumentOrchestrator:
         # Deduplicate and rank findings
         unique_findings = self._deduplicate_findings(all_findings)
         unique_recommendations = self._deduplicate_recommendations(all_recommendations)
+        
+        # Analyze MCP enhancement across all agents
+        total_mcp_enhanced = 0
+        mcp_sources_used = set()
+        high_confidence_findings = 0
+        
+        for finding in unique_findings:
+            if isinstance(finding, dict):
+                if finding.get('mcp_enhanced', False):
+                    total_mcp_enhanced += 1
+                if finding.get('source_type'):
+                    mcp_sources_used.add(finding.get('source_type'))
+                if finding.get('confidence', 0) > 0.8:
+                    high_confidence_findings += 1
+        
+        # Log MCP enhancement summary
+        if total_mcp_enhanced > 0 or mcp_sources_used:
+            self.logger.info(f"🌐 MCP Enhancement Summary:")
+            self.logger.info(f"   📊 Total Findings: {len(unique_findings)}")
+            self.logger.info(f"   🔍 MCP Enhanced: {total_mcp_enhanced}")
+            self.logger.info(f"   🎯 High Confidence: {high_confidence_findings}")
+            if mcp_sources_used:
+                self.logger.info(f"   📡 External Sources: {', '.join(sorted(mcp_sources_used))}")
+            
+            # Calculate MCP enhancement percentage
+            enhancement_rate = (total_mcp_enhanced / len(unique_findings)) * 100 if unique_findings else 0
+            self.logger.info(f"   📈 Enhancement Rate: {enhancement_rate:.1f}%")
+        else:
+            self.logger.info(f"📊 Analysis completed without MCP enhancement")
+            self.logger.info(f"   💡 Consider checking MCP service connectivity for external intelligence")
         
         # Add query-specific insights if available
         if query and unique_findings:

@@ -21,33 +21,117 @@ async def ask_question(
     request: ChatRequest,
     current_user = Depends(get_current_active_user)
 ):
-    """Ask a question about documents using AI agents"""
+    """
+    Ask questions about your documents using enhanced AI with MCP integration
+    
+    DOCUMENT MODE: When document_id is provided
+    - Analyzes specific document content
+    - Provides document-focused insights
+    - Enhanced with external legal/industry context
+    
+    GENERAL MODE: When no document_id provided
+    - General document guidance
+    - Legal and business knowledge
+    - Industry best practices
+    """
     try:
         start_time = time.time()
         
-        # Import here to avoid circular imports
-        from app.agents import agent_orchestrator
+        # Import the enhanced conversational agent
+        from app.agents.conversational_agent import ConversationalAgent
+        from app.agents.base_agent import AgentContext
         
-        # Process the question with document type filtering
-        result = await agent_orchestrator.process_query(
-            query=request.question,
+        # Determine chat mode
+        chat_mode = request.chat_mode or "documents"
+        
+        # Validate mode restrictions
+        if chat_mode == "documents" and not request.document_id and not request.search_all_documents:
+            # Document mode requires either a specific document or all documents search
+            return ChatResponse(
+                response="Please select a document or enable 'Search All Documents' to ask questions about your documents. For general questions, switch to 'General Mode'.",
+                sources=[{"name": "system", "type": "guidance"}],
+                confidence=1.0,
+                processing_time=0.0,
+                agent_results=[]
+            )
+        
+        # Create agent context
+        context = AgentContext(
+            contract_id=request.document_id or "no_document",
             user_id=current_user.user_id,
-            document_id=request.document_id,
-            conversation_history=request.conversation_history or [],
-            document_types=request.document_types,
-            industry_types=request.industry_types
+            query=request.question,
+            document_type="contract",
+            metadata={
+                "conversation_history": request.conversation_history or [],
+                "document_types": request.document_types,
+                "industry_types": request.industry_types,
+                "chat_mode": chat_mode,
+                "search_all_documents": request.search_all_documents
+            }
         )
+        
+        # Get conversational agent from factory (supports remote/local/agentcore)
+        from app.agents.agent_factory import agent_factory
+        agent = agent_factory.get_agent("conversational_agent")
+        
+        if not agent:
+            raise HTTPException(status_code=503, detail="Conversational agent not available")
+        result = await agent.analyze(context)
         
         processing_time = time.time() - start_time
         
+        # Extract response from agent result
+        response_text = ""
+        sources = []
+        enhanced_with_external = False
+        
+        for finding in result.findings:
+            if finding.get("type") in ["document_chat_response", "enhanced_response", "ai_response", "document_guidance"]:
+                response_text = finding.get("description", "")
+                if finding.get("enhanced_with_external", False):
+                    enhanced_with_external = True
+                break
+        
+        # Collect sources from data sources and findings - convert to dict format
+        sources_set = set()
+        
+        # Add data sources
+        if result.data_sources:
+            for source in result.data_sources:
+                sources_set.add(source)
+        
+        # Add sources from findings
+        for finding in result.findings:
+            if finding.get("source"):
+                sources_set.add(finding["source"])
+        
+        # Convert sources to expected dict format
+        sources = [{"name": source, "type": "data_source"} for source in sources_set]
+        
+        # Fallback response if no main response found
+        if not response_text:
+            if result.findings:
+                response_text = result.findings[0].get("description", "I processed your question but couldn't generate a specific response.")
+            else:
+                response_text = "I'm having trouble processing your question right now. Please try rephrasing or contact support."
+        
+        # Add context information to response
+        if request.document_id and response_text:
+            response_text += f"\n\n💡 This analysis is based on your uploaded document. Ask follow-up questions for more details!"
+        elif not request.document_id and "document" in request.question.lower():
+            response_text += f"\n\n📄 To get specific document analysis, please select a document from the dropdown above."
+        
         return ChatResponse(
-            response=result.get("response", "I couldn't process your question."),
-            sources=result.get("sources", []),
-            confidence=result.get("confidence", 0.0),
+            response=response_text,
+            sources=sources,
+            confidence=result.confidence,
             processing_time=processing_time
         )
         
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Chat processing error: {error_details}")
         raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
 
 @router.post("/runs", response_model=RunResponse)

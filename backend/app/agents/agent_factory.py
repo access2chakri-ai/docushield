@@ -7,6 +7,7 @@ Enterprise-grade architecture for agent lifecycle management
 import early_config
 
 import os
+import json
 import logging
 from typing import Dict, Optional, Type, List, Any
 from enum import Enum
@@ -21,49 +22,43 @@ logger = logging.getLogger(__name__)
 # Configuration for remote agents
 USE_REMOTE = os.getenv("USE_REMOTE_AGENTS", "").lower() == "true"
 
-# Minimal base classes for remote agent wrapper
-class AgentStatus:
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-
-class AgentPriority:
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-
-@dataclass
-class AgentContext:
-    contract_id: str
-    user_id: str
-    query: Optional[str] = None
-    run_id: Optional[str] = None
-    session_id: Optional[str] = None
-
-@dataclass
-class AgentResult:
-    status: str
-    confidence: float
-    findings: List[Dict[str, Any]]
-    recommendations: List[str]
-    llm_calls: int = 0
-    data_sources: List[str] = None
-    error_message: Optional[str] = None
+# Import from base_agent to ensure consistency
+from app.agents.base_agent import AgentContext, AgentResult, AgentStatus, AgentPriority
 
 class BaseAgent:
     def __init__(self, agent_name: str, version: str = "1.0.0"):
         self.agent_name = agent_name
         self.version = version
     
-    def create_result(self, status=AgentStatus.COMPLETED, confidence=0.8, findings=None, 
-                     recommendations=None, llm_calls=0, data_sources=None, error_message=None):
+    def create_result(
+        self, 
+        status: AgentStatus = AgentStatus.COMPLETED,
+        confidence: float = 0.8,
+        findings: List[Dict[str, Any]] = None,
+        recommendations: List[str] = None,
+        data_sources: List[str] = None,
+        execution_time_ms: float = 0.0,
+        memory_usage_mb: float = 0.0,
+        llm_calls: int = 0,
+        error_message: str = None,
+        session_id: str = None,
+        trace_id: str = None
+    ) -> AgentResult:
+        """Create standardized agent result - AWS Bedrock AgentCore compatible"""
         return AgentResult(
+            agent_name=self.agent_name,
+            agent_version=self.version,
             status=status,
             confidence=confidence,
             findings=findings or [],
             recommendations=recommendations or [],
+            execution_time_ms=execution_time_ms,
+            memory_usage_mb=memory_usage_mb,
             llm_calls=llm_calls,
             data_sources=data_sources or [],
-            error_message=error_message
+            error_message=error_message,
+            session_id=session_id,
+            trace_id=trace_id
         )
     
     async def analyze(self, context):
@@ -100,7 +95,11 @@ class RemoteDocumentSearchAgent(BaseAgent):
             if status_str == "FAILED":
                 return self.create_result(
                     status=AgentStatus.FAILED, 
-                    error_message=data.get("error_message", "Remote agent failed")
+                    error_message=data.get("error_message", "Remote agent failed"),
+                    execution_time_ms=data.get("execution_time_ms", 0.0),
+                    memory_usage_mb=data.get("memory_usage_mb", 0.0),
+                    session_id=getattr(context, "session_id", None),
+                    trace_id=getattr(context, "run_id", None)
                 )
             
             return self.create_result(
@@ -109,14 +108,165 @@ class RemoteDocumentSearchAgent(BaseAgent):
                 findings=data.get("findings", []),
                 recommendations=data.get("recommendations", []),
                 llm_calls=data.get("llm_calls", 0),
-                data_sources=data.get("data_sources", [])
+                data_sources=data.get("data_sources", []),
+                execution_time_ms=data.get("execution_time_ms", 0.0),
+                memory_usage_mb=data.get("memory_usage_mb", 0.0),
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
             )
             
         except Exception as e:
-            logger.error(f"Remote agent call failed: {e}")
+            logger.error(f"Remote document search agent call failed: {e}")
             return self.create_result(
                 status=AgentStatus.FAILED,
-                error_message=f"Remote agent error: {str(e)}"
+                error_message=f"Remote agent error: {str(e)}",
+                execution_time_ms=0.0,
+                memory_usage_mb=0.0,
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
+            )
+
+class RemoteDocumentAnalysisAgent(BaseAgent):
+    """Remote wrapper for DocumentAnalysisAgent that calls Dockerized agent via HTTP"""
+    
+    def __init__(self):
+        super().__init__("document_analysis_agent_remote", "3.0.0")
+    
+    async def _execute_analysis(self, context: AgentContext):
+        """Execute analysis by calling remote agent via HTTP"""
+        try:
+            payload = {
+                "inputs": {
+                    "contract_id": context.contract_id,
+                    "user_id": context.user_id,
+                    "query": context.query,
+                    "document_type": getattr(context, "document_type", None),
+                    "priority": str(getattr(context, "priority", "MEDIUM"))  # Convert to string
+                },
+                "session_id": getattr(context, "session_id", None),
+                "request_id": getattr(context, "run_id", None)
+            }
+            
+            # Call remote agent
+            data = await call_agent("document-analysis", payload)
+            
+            # Map remote JSON back to AgentResult
+            status_str = str(data.get("status", "")).upper()
+            if status_str == "FAILED":
+                return self.create_result(
+                    status=AgentStatus.FAILED, 
+                    error_message=data.get("error_message", "Remote agent failed"),
+                    execution_time_ms=data.get("execution_time_ms", 0.0),
+                    memory_usage_mb=data.get("memory_usage_mb", 0.0),
+                    session_id=getattr(context, "session_id", None),
+                    trace_id=getattr(context, "run_id", None)
+                )
+            
+            return self.create_result(
+                status=AgentStatus.COMPLETED,
+                confidence=data.get("confidence", 0.0),
+                findings=data.get("findings", []),
+                recommendations=data.get("recommendations", []),
+                llm_calls=data.get("llm_calls", 0),
+                data_sources=data.get("data_sources", []),
+                execution_time_ms=data.get("execution_time_ms", 0.0),
+                memory_usage_mb=data.get("memory_usage_mb", 0.0),
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
+            )
+            
+        except Exception as e:
+            logger.error(f"Remote document analysis agent call failed: {e}")
+            return self.create_result(
+                status=AgentStatus.FAILED,
+                error_message=f"Remote agent error: {str(e)}",
+                execution_time_ms=0.0,
+                memory_usage_mb=0.0,
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
+            )
+
+class RemoteConversationalAgent(BaseAgent):
+    """Remote wrapper for ConversationalAgent that calls Dockerized agent via HTTP"""
+    
+    def __init__(self):
+        super().__init__("conversational_agent_remote", "2.0.0")
+    
+    async def _execute_analysis(self, context: AgentContext):
+        """Execute analysis by calling remote conversational agent via HTTP"""
+        try:
+            # Extract metadata for conversational context
+            metadata = getattr(context, "metadata", {})
+            
+            payload = {
+                "inputs": {
+                    "query": context.query,
+                    "document_id": context.contract_id,
+                    "user_id": context.user_id,
+                    "document_type": getattr(context, "document_type", "contract"),
+                    "chat_mode": metadata.get("chat_mode", "documents"),
+                    "search_all_documents": metadata.get("search_all_documents", False),
+                    "conversation_history": metadata.get("conversation_history", []),
+                    "use_external_data": metadata.get("use_external_data", True),
+                    "max_response_length": metadata.get("max_response_length", 1000)
+                },
+                "session_id": getattr(context, "session_id", None),
+                "request_id": getattr(context, "run_id", None)
+            }
+            
+            # Call remote conversational agent
+            data = await call_agent("conversational-chat", payload)
+            
+            # Map remote JSON back to AgentResult
+            status_str = str(data.get("status", "")).upper()
+            if status_str == "FAILED":
+                return self.create_result(
+                    status=AgentStatus.FAILED, 
+                    error_message=data.get("error_message", "Remote conversational agent failed"),
+                    execution_time_ms=data.get("execution_time_ms", 0.0),
+                    memory_usage_mb=data.get("memory_usage_mb", 0.0),
+                    session_id=getattr(context, "session_id", None),
+                    trace_id=getattr(context, "run_id", None)
+                )
+            
+            # Extract conversational-specific data
+            response_text = data.get("response", "")
+            chat_mode = data.get("chat_mode", "documents")
+            document_context = data.get("document_context", False)
+            enhanced_with_external = data.get("enhanced_with_external", False)
+            
+            # Create result with conversational metadata
+            result = self.create_result(
+                status=AgentStatus.COMPLETED,
+                confidence=data.get("confidence", 0.0),
+                findings=data.get("findings", []),
+                recommendations=data.get("recommendations", []),
+                llm_calls=data.get("llm_calls", 0),
+                data_sources=data.get("data_sources", []),
+                execution_time_ms=data.get("execution_time_ms", 0.0),
+                memory_usage_mb=data.get("memory_usage_mb", 0.0),
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
+            )
+            
+            # Add conversational-specific attributes
+            result.response = response_text
+            result.chat_mode = chat_mode
+            result.document_context = document_context
+            result.enhanced_with_external = enhanced_with_external
+            result.conversation_metadata = data.get("conversation_metadata", {})
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Remote conversational agent call failed: {e}")
+            return self.create_result(
+                status=AgentStatus.FAILED,
+                error_message=f"Remote conversational agent error: {str(e)}",
+                execution_time_ms=0.0,
+                memory_usage_mb=0.0,
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
             )
 
 class AgentCoreDocumentSearchAgent(BaseAgent):
@@ -138,12 +288,19 @@ class AgentCoreDocumentSearchAgent(BaseAgent):
             # Because boto3 is sync, offload to a thread to avoid blocking the event loop
             import asyncio
             result = await asyncio.to_thread(
-                _invoke_agentcore_sync, payload, getattr(context, "session_id", None)
+                _invoke_agentcore_sync, payload, getattr(context, "session_id", None), "search"
             )
 
             # Map generic response to your AgentResult
             if isinstance(result, dict) and result.get("error"):
-                return self.create_result(status=AgentStatus.FAILED, error_message=result["error"])
+                return self.create_result(
+                    status=AgentStatus.FAILED, 
+                    error_message=result["error"],
+                    execution_time_ms=result.get("execution_time_ms", 0.0),
+                    memory_usage_mb=result.get("memory_usage_mb", 0.0),
+                    session_id=getattr(context, "session_id", None),
+                    trace_id=getattr(context, "run_id", None)
+                )
 
             return self.create_result(
                 status=AgentStatus.COMPLETED,
@@ -152,10 +309,152 @@ class AgentCoreDocumentSearchAgent(BaseAgent):
                 recommendations=result.get("recommendations", []),
                 llm_calls=int(result.get("llm_calls", 0)),
                 data_sources=result.get("data_sources", []),
+                execution_time_ms=result.get("execution_time_ms", 0.0),
+                memory_usage_mb=result.get("memory_usage_mb", 0.0),
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
             )
         except Exception as e:
             logger.exception("AgentCore invocation failed")
-            return self.create_result(status=AgentStatus.FAILED, error_message=str(e))
+            return self.create_result(
+                status=AgentStatus.FAILED, 
+                error_message=str(e),
+                execution_time_ms=0.0,
+                memory_usage_mb=0.0,
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
+            )
+
+class AgentCoreDocumentAnalysisAgent(BaseAgent):
+    """Wrapper that invokes an AgentCore Runtime agent by ARN for document analysis."""
+    
+    def __init__(self):
+        super().__init__("document_analysis_agentcore", "3.0.0")
+
+    async def _execute_analysis(self, context: AgentContext):
+        try:
+            # Shape the prompt/payload your AgentCore expects.
+            payload = {
+                "contract_id": context.contract_id,
+                "user_id": context.user_id,
+                "query": context.query,
+                "document_type": getattr(context, "document_type", None),
+                "priority": getattr(context, "priority", "MEDIUM"),
+            }
+            # Because boto3 is sync, offload to a thread to avoid blocking the event loop
+            import asyncio
+            result = await asyncio.to_thread(
+                _invoke_agentcore_sync, payload, getattr(context, "session_id", None), "analysis"
+            )
+
+            # Map generic response to your AgentResult
+            if isinstance(result, dict) and result.get("error"):
+                return self.create_result(
+                    status=AgentStatus.FAILED, 
+                    error_message=result["error"],
+                    execution_time_ms=result.get("execution_time_ms", 0.0),
+                    memory_usage_mb=result.get("memory_usage_mb", 0.0),
+                    session_id=getattr(context, "session_id", None),
+                    trace_id=getattr(context, "run_id", None)
+                )
+
+            return self.create_result(
+                status=AgentStatus.COMPLETED,
+                confidence=float(result.get("confidence", 0.0)),
+                findings=result.get("findings", []),
+                recommendations=result.get("recommendations", []),
+                llm_calls=int(result.get("llm_calls", 0)),
+                data_sources=result.get("data_sources", []),
+                execution_time_ms=result.get("execution_time_ms", 0.0),
+                memory_usage_mb=result.get("memory_usage_mb", 0.0),
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
+            )
+        except Exception as e:
+            logger.exception("AgentCore invocation failed")
+            return self.create_result(
+                status=AgentStatus.FAILED, 
+                error_message=str(e),
+                execution_time_ms=0.0,
+                memory_usage_mb=0.0,
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
+            )
+
+class AgentCoreConversationalAgent(BaseAgent):
+    """Wrapper that invokes an AgentCore Runtime agent by ARN for conversational chat."""
+    
+    def __init__(self):
+        super().__init__("conversational_agentcore", "2.0.0")
+
+    async def _execute_analysis(self, context: AgentContext):
+        try:
+            # Extract metadata for conversational context
+            metadata = getattr(context, "metadata", {})
+            
+            # Shape the prompt/payload your AgentCore expects.
+            payload = {
+                "query": context.query,
+                "document_id": context.contract_id,
+                "user_id": context.user_id,
+                "document_type": getattr(context, "document_type", "contract"),
+                "chat_mode": metadata.get("chat_mode", "documents"),
+                "search_all_documents": metadata.get("search_all_documents", False),
+                "conversation_history": metadata.get("conversation_history", []),
+                "use_external_data": metadata.get("use_external_data", True),
+                "max_response_length": metadata.get("max_response_length", 1000)
+            }
+            
+            # Because boto3 is sync, offload to a thread to avoid blocking the event loop
+            import asyncio
+            result = await asyncio.to_thread(
+                _invoke_agentcore_sync, payload, getattr(context, "session_id", None), "conversational"
+            )
+
+            # Map generic response to your AgentResult
+            if isinstance(result, dict) and result.get("error"):
+                return self.create_result(
+                    status=AgentStatus.FAILED, 
+                    error_message=result["error"],
+                    execution_time_ms=result.get("execution_time_ms", 0.0),
+                    memory_usage_mb=result.get("memory_usage_mb", 0.0),
+                    session_id=getattr(context, "session_id", None),
+                    trace_id=getattr(context, "run_id", None)
+                )
+
+            # Create result with conversational-specific data
+            agent_result = self.create_result(
+                status=AgentStatus.COMPLETED,
+                confidence=float(result.get("confidence", 0.0)),
+                findings=result.get("findings", []),
+                recommendations=result.get("recommendations", []),
+                llm_calls=int(result.get("llm_calls", 0)),
+                data_sources=result.get("data_sources", []),
+                execution_time_ms=result.get("execution_time_ms", 0.0),
+                memory_usage_mb=result.get("memory_usage_mb", 0.0),
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
+            )
+            
+            # Add conversational-specific attributes
+            agent_result.response = result.get("response", "")
+            agent_result.chat_mode = result.get("chat_mode", "documents")
+            agent_result.document_context = result.get("document_context", False)
+            agent_result.enhanced_with_external = result.get("enhanced_with_external", False)
+            agent_result.conversation_metadata = result.get("conversation_metadata", {})
+            
+            return agent_result
+            
+        except Exception as e:
+            logger.exception("AgentCore conversational invocation failed")
+            return self.create_result(
+                status=AgentStatus.FAILED, 
+                error_message=str(e),
+                execution_time_ms=0.0,
+                memory_usage_mb=0.0,
+                session_id=getattr(context, "session_id", None),
+                trace_id=getattr(context, "run_id", None)
+            )
 
 class AgentType(Enum):
     """AWS Bedrock AgentCore compatible agent types"""
@@ -163,6 +462,7 @@ class AgentType(Enum):
     DOCUMENT_SEARCH = "document_search_agent"
     CLAUSE_ANALYSIS = "clause_analysis_agent"
     RISK_ANALYSIS = "risk_analysis_agent"
+    CONVERSATIONAL = "conversational_agent"
 
 class AgentFactory:
     """
@@ -190,36 +490,85 @@ class AgentFactory:
         self._agents = {}
         logger.info(f"🔧 Agent Factory: USE_REMOTE_AGENTS = {USE_REMOTE}")
         
+        # Parse remote endpoints to check availability
+        remote_endpoints = {}
+        try:
+            remote_endpoints = json.loads(os.getenv("REMOTE_AGENT_ENDPOINTS", "{}"))
+        except json.JSONDecodeError:
+            logger.warning("Invalid REMOTE_AGENT_ENDPOINTS JSON, using empty dict")
+        
+        logger.info(f"🔧 Available Remote Endpoints: {list(remote_endpoints.keys())}")
+        
+        # Helper function to check if remote endpoint is available
+        def has_remote_endpoint(agent_name: str) -> bool:
+            return agent_name in remote_endpoints
+        
         # Try to initialize each agent individually
         try:
-            from .document_analyzer import DocumentAnalysisAgent
-            doc_agent = DocumentAnalysisAgent()
+            logger.info(f"🔧 Document Analysis Agent Selection:")
+            logger.info(f"   - settings.use_bedrock_agentcore: {settings.use_bedrock_agentcore}")
+            logger.info(f"   - USE_REMOTE: {USE_REMOTE}")
+            logger.info(f"   - Has 'document-analysis' endpoint: {has_remote_endpoint('document-analysis')}")
+            
+            if settings.use_bedrock_agentcore:
+                doc_agent = AgentCoreDocumentAnalysisAgent()
+                logger.info("✅ AgentCore Document Analysis Agent initialized")
+            elif USE_REMOTE and has_remote_endpoint('document-analysis'):
+                logger.info("🐳 Attempting to create Remote Document Analysis Agent...")
+                try:
+                    doc_agent = RemoteDocumentAnalysisAgent()
+                    logger.info("✅ Remote Document Analysis Agent initialized")
+                except Exception as remote_error:
+                    logger.error(f"❌ Remote Document Analysis Agent failed: {remote_error}")
+                    logger.info("🏠 Falling back to Local Document Analysis Agent...")
+                    try:
+                        from .document_analyzer import DocumentAnalysisAgent
+                        doc_agent = DocumentAnalysisAgent()
+                        logger.info("✅ Local Document Analysis Agent initialized (fallback from remote error)")
+                    except ImportError as ie:
+                        logger.error(f"❌ Local document analysis agent import also failed: {ie}")
+                        raise Exception(f"Both remote and local document analysis agents failed")
+            else:
+                if USE_REMOTE and not has_remote_endpoint('document-analysis'):
+                    logger.info("🏠 No remote endpoint for document-analysis, using local agent")
+                try:
+                    from .document_analyzer import DocumentAnalysisAgent
+                    doc_agent = DocumentAnalysisAgent()
+                    logger.info("✅ Local Document Analysis Agent initialized")
+                except ImportError as ie:
+                    logger.error(f"❌ Local document analysis agent import failed: {ie}")
+                    if USE_REMOTE:
+                        logger.info("🐳 Trying remote as fallback...")
+                        doc_agent = RemoteDocumentAnalysisAgent()
+                        logger.info("✅ Remote Document Analysis Agent initialized (fallback)")
+                    else:
+                        raise Exception(f"Document analysis agent initialization failed")
+            
             self._agents.update({
                 AgentType.DOCUMENT_ANALYSIS.value: doc_agent,
                 'document_analyzer': doc_agent,
                 'enhanced_analyzer': doc_agent,
                 'simple_analyzer': doc_agent,
             })
-            logger.info("✅ Document Analysis Agent initialized")
         except Exception as e:
             logger.error(f"❌ Document Analysis Agent failed: {e}")
         
         try:
+            logger.info(f"🔧 Document Search Agent Selection:")
+            logger.info(f"   - Has 'document-search' endpoint: {has_remote_endpoint('document-search')}")
+            
             if settings.use_bedrock_agentcore:
                 search_agent = AgentCoreDocumentSearchAgent()
                 logger.info("✅ AgentCore Document Search Agent initialized")
-            elif USE_REMOTE:
+            elif USE_REMOTE and has_remote_endpoint('document-search'):
                 search_agent = RemoteDocumentSearchAgent()
                 logger.info("✅ Remote Document Search Agent initialized")
             else:
-                try:
-                    from .search_agent import DocumentSearchAgent
-                    search_agent = DocumentSearchAgent()
-                    logger.info("✅ Local Document Search Agent initialized")
-                except ImportError as ie:
-                    logger.warning(f"Local search agent import failed: {ie}, falling back to remote")
-                    search_agent = RemoteDocumentSearchAgent()
-                    logger.info("✅ Remote Document Search Agent initialized (fallback)")
+                if USE_REMOTE and not has_remote_endpoint('document-search'):
+                    logger.info("🏠 No remote endpoint for document-search, using local agent")
+                from .search_agent import DocumentSearchAgent
+                search_agent = DocumentSearchAgent()
+                logger.info("✅ Local Document Search Agent initialized")
             
             self._agents.update({
                 AgentType.DOCUMENT_SEARCH.value: search_agent,
@@ -249,6 +598,55 @@ class AgentFactory:
             logger.info("✅ Risk Analysis Agent initialized")
         except Exception as e:
             logger.error(f"❌ Risk Analysis Agent failed: {e}")
+        
+        # Initialize Conversational Agent
+        try:
+            logger.info(f"🔧 Conversational Agent Selection:")
+            logger.info(f"   - settings.use_bedrock_agentcore: {settings.use_bedrock_agentcore}")
+            logger.info(f"   - USE_REMOTE: {USE_REMOTE}")
+            logger.info(f"   - Has 'conversational-chat' endpoint: {has_remote_endpoint('conversational-chat')}")
+            
+            if settings.use_bedrock_agentcore:
+                conv_agent = AgentCoreConversationalAgent()
+                logger.info("✅ AgentCore Conversational Agent initialized")
+            elif USE_REMOTE and has_remote_endpoint('conversational-chat'):
+                logger.info("🐳 Attempting to create Remote Conversational Agent...")
+                try:
+                    conv_agent = RemoteConversationalAgent()
+                    logger.info("✅ Remote Conversational Agent initialized")
+                except Exception as remote_error:
+                    logger.error(f"❌ Remote Conversational Agent failed: {remote_error}")
+                    logger.info("🏠 Falling back to Local Conversational Agent...")
+                    try:
+                        from .conversational_agent import ConversationalAgent
+                        conv_agent = ConversationalAgent()
+                        logger.info("✅ Local Conversational Agent initialized (fallback from remote error)")
+                    except ImportError as ie:
+                        logger.error(f"❌ Local conversational agent import also failed: {ie}")
+                        raise Exception(f"Both remote and local conversational agents failed")
+            else:
+                if USE_REMOTE and not has_remote_endpoint('conversational-chat'):
+                    logger.info("🏠 No remote endpoint for conversational-chat, using local agent")
+                try:
+                    from .conversational_agent import ConversationalAgent
+                    conv_agent = ConversationalAgent()
+                    logger.info("✅ Local Conversational Agent initialized")
+                except ImportError as ie:
+                    logger.error(f"❌ Local conversational agent import failed: {ie}")
+                    if USE_REMOTE:
+                        logger.info("🐳 Trying remote as fallback...")
+                        conv_agent = RemoteConversationalAgent()
+                        logger.info("✅ Remote Conversational Agent initialized (fallback)")
+                    else:
+                        raise Exception(f"Conversational agent initialization failed")
+            
+            self._agents.update({
+                AgentType.CONVERSATIONAL.value: conv_agent,
+                'conversational_agent': conv_agent,
+                'chat_agent': conv_agent,
+            })
+        except Exception as e:
+            logger.error(f"❌ Conversational Agent failed: {e}")
         
         # Store metadata for each agent
         for agent_name, agent in self._agents.items():
@@ -309,6 +707,9 @@ class AgentFactory:
             elif agent_type == AgentType.RISK_ANALYSIS:
                 from .risk_analyzer_agent import RiskAnalysisAgent
                 return RiskAnalysisAgent()
+            elif agent_type == AgentType.CONVERSATIONAL:
+                from .conversational_agent import ConversationalAgent
+                return ConversationalAgent()
             else:
                 logger.error(f"Unknown agent type: {agent_type}")
                 return None
@@ -388,94 +789,120 @@ class AgentFactory:
         logger.info("Agent factory reset and reinitialized")
     
     def _get_agent_description(self, agent_type: AgentType) -> str:
-        """Get human-readable description of agent"""
+        """Get human-readable description of agent capabilities"""
         descriptions = {
-            AgentType.DOCUMENT_ANALYSIS: "Comprehensive document analysis including content extraction, risk assessment, and insights generation",
-            AgentType.DOCUMENT_SEARCH: "Semantic and keyword-based document search with intelligent result ranking",
-            AgentType.CLAUSE_ANALYSIS: "Specialized analysis of contract clauses, terms, and legal provisions",
-            AgentType.RISK_ANALYSIS: "Risk assessment and compliance analysis for documents and contracts"
+            AgentType.DOCUMENT_ANALYSIS: "Comprehensive document analysis with risk assessment and clause extraction",
+            AgentType.DOCUMENT_SEARCH: "Semantic and keyword-based document search with intelligent ranking",
+            AgentType.CLAUSE_ANALYSIS: "Specialized clause identification and risk assessment",
+            AgentType.RISK_ANALYSIS: "Advanced risk pattern detection and compliance analysis",
+            AgentType.CONVERSATIONAL: "Natural language interaction with document context awareness"
         }
-        return descriptions.get(agent_type, "General document processing agent")
+        return descriptions.get(agent_type, "Unknown agent type")
     
-    # Orchestrator integration methods
+    # Convenience methods for common agent access patterns
+    def get_document_search_agent(self) -> Optional[BaseAgent]:
+        """Get the document search agent"""
+        return self.get_agent(AgentType.DOCUMENT_SEARCH)
+    
+    def get_orchestrator(self):
+        """Get the document orchestrator for complex workflows"""
+        try:
+            from .orchestrator import DocumentOrchestrator
+            return DocumentOrchestrator()
+        except ImportError as e:
+            logger.error(f"Failed to import DocumentOrchestrator: {e}")
+            return None
+    
+    # Quick access methods for common operations
     async def quick_analysis(
         self, 
         contract_id: str, 
         user_id: str,
         document_type: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Quick analysis using document analysis agent"""
-        try:
-            agent = self.get_agent(AgentType.DOCUMENT_ANALYSIS)
-            if not agent:
-                return {"success": False, "error": "Document analysis agent not available"}
-            
-            from .base_agent import AgentContext, AgentPriority
-            context = AgentContext(
-                contract_id=contract_id,
-                user_id=user_id,
-                document_type=document_type,
-                priority=AgentPriority.MEDIUM,
-                timeout_seconds=30
+    ) -> AgentResult:
+        """Quick document analysis using the best available agent"""
+        agent = self.get_agent(AgentType.DOCUMENT_ANALYSIS)
+        if not agent:
+            return AgentResult(
+                agent_name="factory",
+                agent_version="1.0.0",
+                status=AgentStatus.FAILED,
+                confidence=0.0,
+                findings=[],
+                recommendations=[],
+                execution_time_ms=0.0,
+                memory_usage_mb=0.0,
+                error_message="No document analysis agent available"
             )
-            
-            result = await agent.analyze(context)
-            
-            return {
-                "success": result.success,
-                "confidence": result.confidence,
-                "findings": result.findings,
-                "recommendations": result.recommendations,
-                "execution_time_ms": result.execution_time_ms
-            }
-            
-        except Exception as e:
-            logger.error(f"Quick analysis failed: {e}")
-            return {"success": False, "error": str(e)}
+        
+        context = AgentContext(
+            contract_id=contract_id,
+            user_id=user_id,
+            document_type=document_type
+        )
+        return await agent.analyze(context)
     
     async def quick_search(
         self, 
         query: str, 
         contract_id: str, 
         user_id: str
-    ) -> Dict[str, Any]:
-        """Quick search using document search agent"""
-        try:
-            agent = self.get_agent(AgentType.DOCUMENT_SEARCH)
-            if not agent:
-                return {"success": False, "error": "Document search agent not available"}
-            
-            from .base_agent import AgentContext, AgentPriority
-            context = AgentContext(
-                contract_id=contract_id,
-                user_id=user_id,
-                query=query,
-                priority=AgentPriority.MEDIUM,
-                timeout_seconds=30
+    ) -> AgentResult:
+        """Quick document search using the best available agent"""
+        agent = self.get_agent(AgentType.DOCUMENT_SEARCH)
+        if not agent:
+            return AgentResult(
+                agent_name="factory",
+                agent_version="1.0.0",
+                status=AgentStatus.FAILED,
+                confidence=0.0,
+                findings=[],
+                recommendations=[],
+                execution_time_ms=0.0,
+                memory_usage_mb=0.0,
+                error_message="No document search agent available"
             )
-            
-            result = await agent.analyze(context)
-            
-            return {
-                "success": result.success,
-                "confidence": result.confidence,
-                "findings": result.findings,
-                "recommendations": result.recommendations,
-                "execution_time_ms": result.execution_time_ms
+        
+        context = AgentContext(
+            contract_id=contract_id,
+            user_id=user_id,
+            query=query
+        )
+        return await agent.analyze(context)
+    
+    async def quick_chat(
+        self, 
+        query: str, 
+        user_id: str,
+        document_id: Optional[str] = None,
+        chat_mode: str = "documents",
+        conversation_history: Optional[List[Dict[str, Any]]] = None
+    ) -> AgentResult:
+        """Quick conversational interaction using the best available agent"""
+        agent = self.get_agent(AgentType.CONVERSATIONAL)
+        if not agent:
+            return AgentResult(
+                agent_name="factory",
+                agent_version="1.0.0",
+                status=AgentStatus.FAILED,
+                confidence=0.0,
+                findings=[],
+                recommendations=[],
+                execution_time_ms=0.0,
+                memory_usage_mb=0.0,
+                error_message="No conversational agent available"
+            )
+        
+        context = AgentContext(
+            contract_id=document_id,
+            user_id=user_id,
+            query=query,
+            metadata={
+                "chat_mode": chat_mode,
+                "conversation_history": conversation_history or []
             }
-            
-        except Exception as e:
-            logger.error(f"Quick search failed: {e}")
-            return {"success": False, "error": str(e)}
-    
-    def get_document_search_agent(self):
-        """Get document search agent (local or remote based on configuration)"""
-        return self.get_agent(AgentType.DOCUMENT_SEARCH)
-    
-    def get_orchestrator(self):
-        """Get the document orchestrator instance"""
-        from .orchestrator import document_orchestrator
-        return document_orchestrator
+        )
+        return await agent.analyze(context)
 
-# Global singleton instance
+# Global factory instance
 agent_factory = AgentFactory()

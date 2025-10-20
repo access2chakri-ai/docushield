@@ -22,7 +22,8 @@ from app.models import (
     GoldContractScore, GoldFinding, GoldSuggestion, GoldSummary, Alert,
     ProcessingRun, ProcessingStep, LlmCall, User
 )
-from app.services.llm_factory import llm_factory, LLMTask
+from app.services.llm_factory import LLMTask
+from app.services.privacy_safe_llm import privacy_safe_llm, safe_llm_completion, safe_llm_embedding
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -211,6 +212,154 @@ class BaseAgent(ABC):
             )
             return result.scalars().all()
     
+
+    
+    async def _generate_missing_embeddings_for_contract(self, contract_id: str):
+        """Generate embeddings for chunks that don't have them"""
+        try:
+            from sqlalchemy import select
+            from app.database import get_operational_db
+            
+            async for db in get_operational_db():
+                # Get chunks without embeddings
+                chunks_result = await db.execute(
+                    select(SilverChunk).where(
+                        and_(
+                            SilverChunk.contract_id == contract_id,
+                            SilverChunk.embedding.is_(None)
+                        )
+                    ).limit(10)  # Limit to 10 chunks to avoid overwhelming
+                )
+                chunks_without_embeddings = chunks_result.scalars().all()
+                
+                if not chunks_without_embeddings:
+                    self.logger.info(f"No chunks without embeddings found for contract {contract_id}")
+                    return
+                
+                self.logger.info(f"Generating embeddings for {len(chunks_without_embeddings)} chunks")
+                
+                # Generate embeddings
+                for chunk in chunks_without_embeddings:
+                    try:
+                        embedding_result = await safe_llm_embedding(
+                            text=chunk.chunk_text,
+                            contract_id=contract_id
+                        )
+                        
+                        if embedding_result and "embedding" in embedding_result:
+                            chunk.embedding = embedding_result["embedding"]
+                            chunk.embedding_model = f"{embedding_result['provider']}:{embedding_result['model']}"
+                            self.logger.info(f"Generated embedding for chunk {chunk.chunk_id}")
+                        else:
+                            self.logger.error(f"Failed to generate embedding for chunk {chunk.chunk_id}")
+                            
+                    except Exception as e:
+                        self.logger.error(f"Error generating embedding for chunk {chunk.chunk_id}: {e}")
+                
+                # Commit changes
+                await db.commit()
+                self.logger.info(f"Successfully generated and stored embeddings for contract {contract_id}")
+                break
+                
+        except Exception as e:
+            self.logger.error(f"Error generating missing embeddings: {e}")
+
+    async def _generate_missing_embeddings_for_contract(self, contract_id: str):
+        """Generate embeddings for chunks that don't have them"""
+        try:
+            from sqlalchemy import select, and_
+            from app.database import get_operational_db
+            from app.models import SilverChunk
+            from app.services.llm_factory import llm_factory
+            
+            async for db in get_operational_db():
+                # Find chunks without embeddings for this contract
+                chunks_query = select(SilverChunk).where(
+                    and_(
+                        SilverChunk.contract_id == contract_id,
+                        SilverChunk.embedding.is_(None)
+                    )
+                ).limit(10)  # Limit to prevent overwhelming
+                
+                result = await db.execute(chunks_query)
+                chunks_without_embeddings = result.scalars().all()
+                
+                if not chunks_without_embeddings:
+                    self.logger.info(f"No chunks without embeddings found for contract {contract_id}")
+                    return
+                
+                self.logger.info(f"Generating embeddings for {len(chunks_without_embeddings)} chunks in contract {contract_id}")
+                
+                # Generate embeddings for each chunk
+                for chunk in chunks_without_embeddings:
+                    try:
+                        embedding_result = await safe_llm_embedding(
+                            text=chunk.chunk_text,
+                            contract_id=contract_id
+                        )
+                        
+                        if embedding_result and "embedding" in embedding_result:
+                            chunk.embedding = embedding_result["embedding"]
+                            chunk.embedding_model = f"{embedding_result['provider']}:{embedding_result['model']}"
+                            self.logger.debug(f"Generated embedding for chunk {chunk.chunk_id}")
+                        else:
+                            self.logger.warning(f"Failed to generate embedding for chunk {chunk.chunk_id}")
+                            
+                    except Exception as e:
+                        self.logger.error(f"Error generating embedding for chunk {chunk.chunk_id}: {e}")
+                        continue
+                
+                # Commit the changes
+                try:
+                    await db.commit()
+                    self.logger.info(f"Successfully generated and saved embeddings for contract {contract_id}")
+                except Exception as e:
+                    self.logger.error(f"Failed to save embeddings: {e}")
+                    await db.rollback()
+                
+                break  # Exit the async for loop
+                
+        except Exception as e:
+            self.logger.error(f"Failed to generate missing embeddings for contract {contract_id}: {e}")
+
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """Calculate cosine similarity between two vectors"""
+        try:
+            import math
+            
+            # Convert to lists if needed
+            if not isinstance(vec1, list):
+                vec1 = list(vec1)
+            if not isinstance(vec2, list):
+                vec2 = list(vec2)
+            
+            # Ensure vectors are same length
+            if len(vec1) != len(vec2):
+                self.logger.warning(f"Vector length mismatch: {len(vec1)} vs {len(vec2)}")
+                return 0.0
+            
+            # Ensure all values are floats
+            vec1 = [float(x) for x in vec1]
+            vec2 = [float(x) for x in vec2]
+            
+            # Calculate dot product
+            dot_product = sum(a * b for a, b in zip(vec1, vec2))
+            
+            # Calculate magnitudes
+            magnitude1 = math.sqrt(sum(a * a for a in vec1))
+            magnitude2 = math.sqrt(sum(a * a for a in vec2))
+            
+            if magnitude1 == 0 or magnitude2 == 0:
+                self.logger.warning("Zero magnitude vector detected")
+                return 0.0
+            
+            similarity = dot_product / (magnitude1 * magnitude2)
+            return max(0.0, min(1.0, similarity))  # Clamp to [0, 1]
+            
+        except Exception as e:
+            self.logger.error(f"Cosine similarity calculation failed: {e}")
+            return 0.0
+    
     async def get_contract_tokens(self, contract_id: str, token_types: List[str] = None) -> List[Token]:
         """Get tokens for keyword analysis"""
         async for db in get_operational_db():
@@ -233,6 +382,30 @@ class BaseAgent(ABC):
             result = await db.execute(query.order_by(SilverClauseSpan.confidence.desc()))
             return result.scalars().all()
     
+    async def get_contract_with_all_data(self, contract_id: str):
+        """Get contract with all related data (text, chunks, etc.)"""
+        try:
+            from sqlalchemy.orm import selectinload
+            from app.database import get_operational_db
+            from app.models import BronzeContract
+            
+            async for db in get_operational_db():
+                result = await db.execute(
+                    select(BronzeContract)
+                    .options(
+                        selectinload(BronzeContract.text_raw),
+                        selectinload(BronzeContract.chunks),
+                        selectinload(BronzeContract.clause_spans),
+                        selectinload(BronzeContract.scores)
+                    )
+                    .where(BronzeContract.contract_id == contract_id)
+                )
+                return result.scalars().first()
+                
+        except Exception as e:
+            self.logger.error(f"Failed to get contract {contract_id}: {e}")
+            return None
+
     async def get_existing_findings(self, contract_id: str, finding_types: List[str] = None) -> List[GoldFinding]:
         """Get existing findings to avoid duplication"""
         async for db in get_operational_db():
@@ -394,43 +567,70 @@ class BaseAgent(ABC):
         contract_id: str,
         task_type: LLMTask = LLMTask.ANALYSIS,
         max_tokens: int = 1000,
-        temperature: float = 0.1
-    ) -> Tuple[Dict[str, Any], str]:
-        """Call LLM and track usage"""
+        temperature: float = 0.1,
+        document_content: Optional[str] = None,
+        analysis_type: str = "general"
+    ) -> str:
+        """Call LLM with privacy protection and usage tracking"""
         start_time = datetime.now()
         
         try:
-            # Add timeout and error handling for LLM calls
+            # Use privacy-safe LLM service
             import asyncio
             result = await asyncio.wait_for(
-                llm_factory.generate_completion(
+                privacy_safe_llm.safe_generate_completion(
                     prompt=prompt,
                     task_type=task_type,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    contract_id=contract_id
+                    contract_id=contract_id,
+                    document_content=document_content,
+                    analysis_type=analysis_type
                 ),
-                timeout=30.0  # 30 second timeout
+                timeout=90.0  # 90 second timeout
             )
             
-            # Track the call
+            # Track the call with privacy metadata
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             
             call_data = {
-                'provider': result.get('provider', 'openai'),
-                'model': result.get('model', 'gpt-4'),
+                'provider': result.get('provider', 'bedrock'),
+                'model': result.get('model', 'nova-lite'),
                 'call_type': 'completion',
-                'input_tokens': result.get('usage', {}).get('prompt_tokens', 0),
-                'output_tokens': result.get('usage', {}).get('completion_tokens', 0),
-                'total_tokens': result.get('usage', {}).get('total_tokens', 0),
+                'input_tokens': result.get('tokens', 0),
+                'output_tokens': result.get('tokens', 0),
+                'total_tokens': result.get('tokens', 0),
                 'latency_ms': int(execution_time),
                 'success': True,
-                'metadata': {'agent': self.agent_name, 'task_type': task_type.value}
+                'metadata': {
+                    'agent': self.agent_name, 
+                    'task_type': task_type.value,
+                    'privacy_protected': result.get('privacy_protected', False),
+                    'redaction_applied': result.get('redaction_applied', False),
+                    'pii_redacted': result.get('pii_redacted', 0)
+                }
             }
             
             call_id = await self.track_llm_call(contract_id, call_data)
             
-            return result, call_id
+            # Log privacy protection details
+            if result.get('privacy_protected'):
+                self.logger.info(f"🔒 Privacy-protected LLM call completed:")
+                self.logger.info(f"   🛡️ Provider: {result.get('provider')}")
+                self.logger.info(f"   📊 PII redacted: {result.get('pii_redacted', 0)}")
+                self.logger.info(f"   🔐 Sensitivity: {result.get('sensitivity_level', 'unknown')}")
+            
+            # Return just the text content for backward compatibility
+            # Handle different response formats from LLM service
+            if isinstance(result, dict):
+                response_text = result.get('content', result.get('text', ''))
+            elif isinstance(result, (tuple, list)):
+                response_text = result[0] if len(result) > 0 else ''
+            else:
+                response_text = result
+            
+            # Ensure we always return a string
+            return str(response_text) if response_text is not None else ''
             
         except Exception as e:
             # Track failed call
@@ -450,14 +650,9 @@ class BaseAgent(ABC):
                 pass  # Don't fail if tracking fails
             
             # Return a fallback response instead of raising
-            self.logger.warning(f"LLM call failed for {self.agent_name}: {e}")
-            fallback_result = {
-                'content': f'LLM analysis temporarily unavailable. Error: {str(e)[:100]}',
-                'provider': 'fallback',
-                'model': 'fallback',
-                'usage': {'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0}
-            }
-            return fallback_result, "fallback_call_id"
+            self.logger.warning(f"Privacy-safe LLM call failed for {self.agent_name}: {e}")
+            # Return just the fallback text content for backward compatibility
+            return f'LLM analysis temporarily unavailable. Error: {str(e)[:100]}'
     
     # =============================================================================
     # VECTOR SEARCH METHODS
@@ -468,84 +663,124 @@ class BaseAgent(ABC):
         query: str, 
         contract_id: str = None, 
         limit: int = 5,
-        similarity_threshold: float = 0.7
-    ) -> List[Tuple[SilverChunk, float]]:
-        """Perform semantic search on chunks using TiDB vector search"""
+        similarity_threshold: float = 0.01,
+        user_id: str = None
+    ) -> List[Tuple[Any, float]]:
+        """Perform semantic search on chunks using Python-based cosine similarity"""
         try:
-            # Generate query embedding with timeout
+            # Generate query embedding with privacy protection
             import asyncio
             embedding_result = await asyncio.wait_for(
-                llm_factory.generate_embedding(text=query),
+                privacy_safe_llm.safe_generate_embedding(
+                    text=query,
+                    contract_id=contract_id
+                ),
                 timeout=15.0  # 15 second timeout for embedding
             )
             query_embedding = embedding_result["embedding"]
             
             async for db in get_operational_db():
-                # Build vector search query
+                # Get chunks with embeddings using SQLAlchemy ORM
+                from sqlalchemy import select, and_
+                from app.models import SilverChunk
+                
                 if contract_id:
                     # Search within specific contract
-                    vector_search_sql = text("""
-                        SELECT chunk_id, chunk_text, chunk_order, start_offset, end_offset,
-                               VEC_COSINE_DISTANCE(JSON_EXTRACT(embedding, '$'), :query_embedding) as similarity
-                        FROM silver_chunks 
-                        WHERE contract_id = :contract_id 
-                        AND embedding IS NOT NULL
-                        AND VEC_COSINE_DISTANCE(JSON_EXTRACT(embedding, '$'), :query_embedding) >= :threshold
-                        ORDER BY similarity DESC
-                        LIMIT :limit
-                    """)
-                    
-                    result = await db.execute(
-                        vector_search_sql,
-                        {
-                            "contract_id": contract_id,
-                            "query_embedding": json.dumps(query_embedding),
-                            "threshold": similarity_threshold,
-                            "limit": limit
-                        }
+                    query_stmt = select(SilverChunk).where(
+                        and_(
+                            SilverChunk.contract_id == contract_id,
+                            SilverChunk.embedding.is_not(None)
+                        )
                     )
                 else:
-                    # Search across all chunks
-                    vector_search_sql = text("""
-                        SELECT chunk_id, chunk_text, chunk_order, start_offset, end_offset, contract_id,
-                               VEC_COSINE_DISTANCE(JSON_EXTRACT(embedding, '$'), :query_embedding) as similarity
-                        FROM silver_chunks 
-                        WHERE embedding IS NOT NULL
-                        AND VEC_COSINE_DISTANCE(JSON_EXTRACT(embedding, '$'), :query_embedding) >= :threshold
-                        ORDER BY similarity DESC
-                        LIMIT :limit
-                    """)
-                    
-                    result = await db.execute(
-                        vector_search_sql,
-                        {
-                            "query_embedding": json.dumps(query_embedding),
-                            "threshold": similarity_threshold,
-                            "limit": limit
-                        }
-                    )
+                    # Search across all user's chunks
+                    from app.models import BronzeContract
+                    query_stmt = select(SilverChunk).join(BronzeContract).where(
+                        and_(
+                            BronzeContract.owner_user_id == user_id if user_id else True,
+                            SilverChunk.embedding.is_not(None)
+                        )
+                    ).limit(1000)  # Limit to prevent memory issues
                 
-                # Convert results to SilverChunk objects with similarity scores
+                result = await db.execute(query_stmt)
+                chunks = result.scalars().all()
+                
+                if not chunks:
+                    self.logger.warning(f"No chunks with embeddings found for contract {contract_id}")
+                    return []
+                
+                # Calculate similarities using Python
                 chunks_with_similarity = []
-                for row in result:
-                    # Create a SilverChunk-like object from the row data
-                    chunk_data = {
-                        'chunk_id': row.chunk_id,
-                        'chunk_text': row.chunk_text,
-                        'chunk_order': row.chunk_order,
-                        'start_offset': row.start_offset,
-                        'end_offset': row.end_offset,
-                        'contract_id': getattr(row, 'contract_id', contract_id)
-                    }
-                    
-                    chunks_with_similarity.append((chunk_data, float(row.similarity)))
+                self.logger.info(f"Processing {len(chunks)} chunks for similarity calculation")
                 
-                return chunks_with_similarity
+                for i, chunk in enumerate(chunks):
+                    try:
+                        # Parse embedding from JSON if needed
+                        chunk_embedding = chunk.embedding
+                        if isinstance(chunk_embedding, str):
+                            chunk_embedding = json.loads(chunk_embedding)
+                        elif not isinstance(chunk_embedding, list):
+                            chunk_embedding = list(chunk_embedding)
+                        
+                        # Calculate cosine similarity
+                        similarity = self._cosine_similarity(query_embedding, chunk_embedding)
+                        
+                        # Log similarity for debugging
+                        if i < 5:  # Log first 5 chunks
+                            self.logger.info(f"Chunk {i+1} similarity: {similarity:.4f} (threshold: {similarity_threshold})")
+                            self.logger.info(f"  Text preview: {chunk.chunk_text[:100]}...")
+                        
+                        if similarity >= similarity_threshold:
+                            chunks_with_similarity.append((chunk, similarity))
+                            self.logger.info(f"✅ Chunk {chunk.chunk_id} added with similarity {similarity:.4f}")
+                            
+                    except Exception as e:
+                        self.logger.warning(f"Error processing chunk {chunk.chunk_id}: {e}")
+                        continue
+                
+                self.logger.info(f"Found {len(chunks_with_similarity)} chunks above threshold {similarity_threshold}")
+                
+                # Sort by similarity and return top results
+                chunks_with_similarity.sort(key=lambda x: x[1], reverse=True)
+                return chunks_with_similarity[:limit]
                 
         except Exception as e:
             self.logger.error(f"Semantic search failed: {e}")
+            import traceback
+            self.logger.error(f"Full error trace: {traceback.format_exc()}")
             # Return empty results instead of failing
             return []
+    
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """Calculate cosine similarity between two vectors"""
+        try:
+            import math
+            
+            # Ensure vectors are the same length
+            if len(vec1) != len(vec2):
+                self.logger.warning(f"Vector length mismatch: {len(vec1)} vs {len(vec2)}")
+                return 0.0
+            
+            # Calculate dot product
+            dot_product = sum(a * b for a, b in zip(vec1, vec2))
+            
+            # Calculate magnitudes
+            magnitude1 = math.sqrt(sum(a * a for a in vec1))
+            magnitude2 = math.sqrt(sum(a * a for a in vec2))
+            
+            # Avoid division by zero
+            if magnitude1 == 0.0 or magnitude2 == 0.0:
+                return 0.0
+            
+            # Calculate cosine similarity
+            similarity = dot_product / (magnitude1 * magnitude2)
+            
+            # Ensure result is between -1 and 1
+            return max(-1.0, min(1.0, similarity))
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating cosine similarity: {e}")
+            return 0.0
     
     # =============================================================================
     # UTILITY METHODS
@@ -576,6 +811,11 @@ class BaseAgent(ABC):
         """Get cached result if available"""
         cache_key = self._get_cache_key(context)
         return self._cache.get(cache_key)
+    
+    def clear_cache(self):
+        """Clear all cached results"""
+        self._cache.clear()
+        self.logger.info(f"Cleared cache for {self.agent_name}")
     
     def _cache_result(self, context: AgentContext, result: AgentResult):
         """Cache successful result"""
@@ -628,6 +868,79 @@ class BaseAgent(ABC):
             trace_id=context.run_id
         )
     
+    def _create_failure_result(self, error_message: str) -> AgentResult:
+        """Create failure result with minimal information"""
+        return AgentResult(
+            agent_name=self.agent_name,
+            agent_version=self.version,
+            status=AgentStatus.FAILED,
+            confidence=0.0,
+            findings=[{
+                "type": "error",
+                "title": "Processing Failed",
+                "severity": "high",
+                "confidence": 1.0,
+                "description": error_message
+            }],
+            recommendations=["Please try again or contact support"],
+            execution_time_ms=0.0,
+            memory_usage_mb=0.0,
+            error_message=error_message,
+            data_sources=[]
+        )
+    
+    async def call_llm_with_tracking(
+        self, 
+        prompt: str, 
+        contract_id: str,
+        task_type: LLMTask = LLMTask.ANALYSIS,
+        max_tokens: int = 1000,
+        temperature: float = 0.1,
+        document_content: Optional[str] = None,
+        analysis_type: str = "general"
+    ) -> Tuple[List[Dict[str, Any]], str]:
+        """
+        Privacy-safe LLM call with automatic tracking
+        Returns (result_list, call_id) for backward compatibility
+        """
+        try:
+            result = await safe_llm_completion(
+                prompt=prompt,
+                task_type=task_type,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                contract_id=contract_id,
+                document_content=document_content,
+                analysis_type=analysis_type
+            )
+            
+            # Convert to expected format for backward compatibility
+            result_list = [{
+                "content": result.get("content", ""),
+                "provider": result.get("provider", "unknown"),
+                "model": result.get("model", "unknown"),
+                "privacy_protected": result.get("privacy_protected", True),
+                "pii_redacted": result.get("pii_redacted", 0),
+                "sensitivity_level": result.get("sensitivity_level", "unknown")
+            }]
+            
+            # Generate a call ID for tracking
+            call_id = f"call_{contract_id}_{int(datetime.now().timestamp())}"
+            
+            return result_list, call_id
+            
+        except Exception as e:
+            self.logger.error(f"Privacy-safe LLM call failed: {e}")
+            # Return fallback response
+            fallback_result = [{
+                "content": f"Analysis temporarily unavailable: {str(e)[:100]}",
+                "provider": "fallback",
+                "model": "fallback",
+                "privacy_protected": True,
+                "error": str(e)
+            }]
+            return fallback_result, "fallback_call_id"
+
     def create_result(
         self, 
         status: AgentStatus = AgentStatus.COMPLETED,

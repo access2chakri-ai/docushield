@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
-import { config } from '@/utils/config';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '../../../../utils/auth';
+import { config } from '../../../../utils/config';
 
 
 
@@ -53,7 +53,7 @@ export default function DocumentAnalysisPage() {
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
   const params = useParams();
-  const documentId = params.id as string;
+  const documentId = params?.id as string;
 
   useEffect(() => {
     // Check authentication

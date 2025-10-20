@@ -3,9 +3,9 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
-import { config } from '@/utils/config';
-import DocumentTypeFilter from '@/app/components/DocumentTypeFilter';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '../../utils/auth';
+import { config } from '../../utils/config';
+import DocumentTypeFilter from '../components/DocumentTypeFilter';
 
 
 interface Message {
@@ -54,6 +54,8 @@ export default function ChatPage() {
   const [selectedDocument, setSelectedDocument] = useState<string | null>(null);
   const [availableDocuments, setAvailableDocuments] = useState<Document[]>([]);
   const [selectedDocumentName, setSelectedDocumentName] = useState<string>('');
+  const [chatMode, setChatMode] = useState<'documents' | 'all_documents' | 'general'>('documents');
+  const [searchAllDocuments, setSearchAllDocuments] = useState<boolean>(false);
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -71,7 +73,7 @@ export default function ChatPage() {
     }
 
     // Check if a specific document was selected
-    const documentId = searchParams.get('document');
+    const documentId = searchParams?.get('document');
     if (documentId) {
       setSelectedDocument(documentId);
     }
@@ -178,7 +180,9 @@ export default function ChatPage() {
             content: msg.content
           })),
           document_types: selectedDocumentTypes.length > 0 ? selectedDocumentTypes : null,
-          industry_types: selectedIndustryTypes.length > 0 ? selectedIndustryTypes : null
+          industry_types: selectedIndustryTypes.length > 0 ? selectedIndustryTypes : null,
+          chat_mode: chatMode,
+          search_all_documents: searchAllDocuments
         })
       }, 120000); // 2 minutes timeout for AI operations
 
@@ -188,18 +192,25 @@ export default function ChatPage() {
 
       const chatResult = await response.json();
 
-      // Create assistant response message
+      // Determine if this was enhanced with external data
+      const isEnhanced = chatResult.agent_results?.some((agent: any) => agent.enhanced_with_external) || false;
+      const hasDocumentContext = !!selectedDocument;
+
+      // Create assistant response message with enhanced information
       const assistantMessage: Message = {
         id: Date.now().toString() + '_result',
         type: 'assistant',
         content: chatResult.response || 'I apologize, but I couldn\'t generate a response. Please try rephrasing your question.',
         timestamp: new Date(),
         steps: {
-          total_steps: 1,
+          total_steps: chatResult.agent_results?.length || 1,
           execution_time: chatResult.processing_time || 0,
           retrieval_results: chatResult.sources || [],
           llm_analysis: chatResult.agent_results || [],
-          external_actions: {}
+          external_actions: isEnhanced ? { external_data: true } : {},
+          document_context: hasDocumentContext,
+          enhanced_with_external: isEnhanced,
+          confidence: chatResult.confidence || 0.0
         }
       };
 
@@ -284,8 +295,76 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* Document Selector */}
-        {availableDocuments.length > 0 && (
+        {/* Chat Mode Selector */}
+        <div className="bg-white rounded-lg shadow-lg p-4 mb-6">
+          <div className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-2 block">
+                🎯 Chat Mode:
+              </label>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => {
+                    setChatMode('documents');
+                    setSearchAllDocuments(false);
+                  }}
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    chatMode === 'documents'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                  disabled={isLoading}
+                >
+                  📄 Document Mode
+                </button>
+                <button
+                  onClick={() => {
+                    setChatMode('all_documents');
+                    setSearchAllDocuments(true);
+                    setSelectedDocument(null);
+                  }}
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    chatMode === 'all_documents'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                  disabled={isLoading}
+                >
+                  📚 All Documents
+                </button>
+                <button
+                  onClick={() => {
+                    setChatMode('general');
+                    setSearchAllDocuments(false);
+                  }}
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    chatMode === 'general'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                  disabled={isLoading}
+                >
+                  🌐 General Mode
+                </button>
+              </div>
+            </div>
+            
+            <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded">
+              {chatMode === 'documents' && (
+                <span>📄 <strong>Document Mode:</strong> Ask questions about a specific selected document. Select a document below.</span>
+              )}
+              {chatMode === 'all_documents' && (
+                <span>📚 <strong>All Documents:</strong> Search and analyze across all your uploaded documents at once.</span>
+              )}
+              {chatMode === 'general' && (
+                <span>🌐 <strong>General Mode:</strong> Ask any question including stock prices, news, general knowledge, etc.</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Document Selector - Only show in Document Mode */}
+        {chatMode === 'documents' && availableDocuments.length > 0 && (
           <div className="bg-white rounded-lg shadow-lg p-4 mb-6">
             <div className="flex items-center space-x-4">
               <label className="text-sm font-medium text-gray-700">
@@ -297,7 +376,7 @@ export default function ChatPage() {
                 className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 disabled={isLoading}
               >
-                <option value="">All Documents (General Chat)</option>
+                <option value="">Choose a document...</option>
                 {availableDocuments.map((doc) => (
                   <option key={doc.contract_id} value={doc.contract_id}>
                     {doc.filename} ({new Date(doc.created_at).toLocaleDateString()})
@@ -405,9 +484,14 @@ export default function ChatPage() {
             </div>
             
             <div className="mt-2 text-sm text-gray-500">
-              💡 Try: {selectedDocument 
-                ? `"Summarize this document", "What are the high-risk clauses?", "What recommendations are made?"`
-                : `"What documents do I have?", "Show me high-risk contracts", "Find liability clauses"`
+              💡 Try: {
+                chatMode === 'documents' && selectedDocument
+                  ? `"Summarize this document", "What are the high-risk clauses?", "What recommendations are made?"`
+                  : chatMode === 'all_documents'
+                  ? `"Show me all contracts with renewal clauses", "Which documents have the highest risk?", "Find all liability terms"`
+                  : chatMode === 'general'
+                  ? `"What is Tesla's stock price?", "Latest AI news", "Explain force majeure clause"`
+                  : `"Select a document or choose a mode to get started"`
               }
             </div>
           </div>

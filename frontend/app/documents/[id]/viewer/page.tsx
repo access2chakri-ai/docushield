@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { getUserData, isAuthenticated, authenticatedFetch, type User } from '@/utils/auth';
-import { config } from '@/utils/config';
+import { getUserData, isAuthenticated, authenticatedFetch, type User } from '../../../../utils/auth';
+import { config } from '../../../../utils/config';
 
 interface RiskHighlight {
   start_offset: number;
@@ -46,7 +46,7 @@ export default function DocumentViewerPage() {
   
   const router = useRouter();
   const params = useParams();
-  const documentId = params.id as string;
+  const documentId = params?.id as string;
 
   useEffect(() => {
     if (!isAuthenticated()) {

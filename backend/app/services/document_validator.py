@@ -7,7 +7,8 @@ import re
 from typing import Dict, List, Any, Optional, Tuple
 from enum import Enum
 
-from app.services.llm_factory import llm_factory, LLMTask
+from app.services.llm_factory import LLMTask
+from app.services.privacy_safe_llm import safe_llm_completion
 
 logger = logging.getLogger(__name__)
 
@@ -249,11 +250,13 @@ class DocumentClassifier:
             }}
             """
             
-            result = await llm_factory.generate_completion(
+            result = await safe_llm_completion(
                 prompt=classification_prompt,
                 task_type=LLMTask.CLASSIFICATION,
                 max_tokens=200,
-                temperature=0.1
+                temperature=0.1,
+                document_content=text_sample,
+                analysis_type="document_classification"
             )
             
             import json

@@ -23,7 +23,12 @@ async def advanced_search(
     - "Show invoices above $50k missing PO reference"
     - "High risk liability agreements"
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     try:
+        logger.info(f"🔍 Search request: query='{request.query}', user={current_user.user_id}, type={request.search_type}")
+        
         # Convert string search type to enum
         search_type = SearchType(request.search_type.lower())
         
@@ -31,6 +36,23 @@ async def advanced_search(
         filters = request.filters or {}
         if hasattr(request, 'document_filter') and request.document_filter:
             filters['document_filter'] = request.document_filter
+        
+        logger.info(f"🔍 Calling advanced_search_service.search with filters: {filters}")
+        
+        # Check if service has search method
+        if not hasattr(advanced_search_service, 'search'):
+            logger.error("❌ advanced_search_service.search method not found!")
+            # Return empty response
+            from app.services.advanced_search import SearchResponse
+            return SearchResponse(
+                query=request.query,
+                results=[],
+                total_results=0,
+                search_time_ms=0.0,
+                search_type=search_type,
+                applied_filters=filters,
+                suggestions=["Search service not properly configured. Please check backend logs."]
+            )
         
         # Execute search with document type and industry filtering
         search_response = await advanced_search_service.search(
@@ -42,6 +64,8 @@ async def advanced_search(
             document_types=getattr(request, 'document_types', None),
             industry_types=getattr(request, 'industry_types', None)
         )
+        
+        logger.info(f"🔍 Search response: {len(search_response.results) if hasattr(search_response, 'results') else 0} results")
         
         return search_response
         
@@ -57,17 +81,23 @@ async def get_search_suggestions(current_user = Depends(get_current_active_user)
         # This would analyze user's documents and suggest relevant searches
         suggestions = [
             "Find high-risk contract clauses",
-            "Show recent uploaded documents",
+            "Show recent uploaded documents", 
             "Search for payment terms",
             "Find contracts expiring soon",
-            "Show documents with missing signatures"
+            "Show documents with missing signatures",
+            "Find documents with dollar amounts",
+            "Search for liability limits",
+            "Show auto-renewal clauses",
+            "Find termination conditions"
         ]
         
         return {
             "suggestions": suggestions,
-            "categories": ["contracts", "invoices", "policies", "agreements"],
+            "categories": ["contracts", "invoices", "policies", "agreements", "financial"],
             "user_id": current_user.user_id
         }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get suggestions: {str(e)}")
+
+
