@@ -376,7 +376,25 @@ export default function RiskDashboard() {
                             <span className="text-sm">{getSeverityIcon(finding.severity)}</span>
                             <div className="flex-1">
                               <p className="text-sm font-medium text-gray-900">{finding.title}</p>
-                              <p className="text-xs text-gray-600">{finding.description}</p>
+                              <p className="text-xs text-gray-600">
+                                {(() => {
+                                  try {
+                                    // Try to parse JSON if it's a JSON string
+                                    const parsed = JSON.parse(finding.description);
+                                    if (parsed.clauses && Array.isArray(parsed.clauses)) {
+                                      return `${parsed.clauses.length} clauses found`;
+                                    }
+                                    return finding.description.length > 30 
+                                      ? `${finding.description.substring(0, 30)}...` 
+                                      : finding.description;
+                                  } catch {
+                                    // If not JSON, just truncate to 30 characters
+                                    return finding.description.length > 30 
+                                      ? `${finding.description.substring(0, 30)}...` 
+                                      : finding.description;
+                                  }
+                                })()}
+                              </p>
                             </div>
                           </div>
                         ))}
@@ -453,7 +471,42 @@ export default function RiskDashboard() {
                             <span>{getSeverityIcon(finding.severity)}</span>
                             <span className="font-medium">{finding.title}</span>
                           </div>
-                          <p className="text-sm text-gray-600">{finding.description}</p>
+                          <p className="text-sm text-gray-600">
+                            {(() => {
+                              try {
+                                // Try to parse JSON if it's a JSON string
+                                const parsed = JSON.parse(finding.description);
+                                if (parsed.clauses && Array.isArray(parsed.clauses)) {
+                                  return (
+                                    <div className="space-y-2">
+                                      <p>Found {parsed.clauses.length} clauses:</p>
+                                      <ul className="list-disc list-inside space-y-1">
+                                        {parsed.clauses.slice(0, 3).map((clause: any, idx: number) => (
+                                          <li key={idx} className="text-xs">
+                                            <strong>{clause.type}:</strong> {clause.matched_text} 
+                                            {clause.context && ` (${clause.context.substring(0, 50)}...)`}
+                                          </li>
+                                        ))}
+                                        {parsed.clauses.length > 3 && (
+                                          <li className="text-xs text-gray-500">
+                                            +{parsed.clauses.length - 3} more clauses
+                                          </li>
+                                        )}
+                                      </ul>
+                                    </div>
+                                  );
+                                }
+                                return finding.description.length > 200 
+                                  ? `${finding.description.substring(0, 200)}...` 
+                                  : finding.description;
+                              } catch {
+                                // If not JSON, just truncate long descriptions
+                                return finding.description.length > 200 
+                                  ? `${finding.description.substring(0, 200)}...` 
+                                  : finding.description;
+                              }
+                            })()}
+                          </p>
                         </div>
                       ))}
                     </div>

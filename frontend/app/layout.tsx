@@ -7,11 +7,16 @@ import Navigation from './components/Navigation'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'DocuShield - Document Analysis & Workflow Platform',
-  description: 'AI-powered document analysis with intelligent workflows and real-time insights',
-  keywords: 'document analysis, AI, workflow, automation, insights',
+  title: 'DocuShield - AI-Powered Document Intelligence',
+  description: 'Enterprise document analysis with multi-LLM AI, real-time enrichment, and intelligent risk assessment',
+  keywords: 'document analysis, AI, multi-LLM, MCP integration, TiDB, enterprise security, risk assessment',
   authors: [{ name: 'DocuShield Team' }],
   viewport: 'width=device-width, initial-scale=1',
+  icons: {
+    icon: '/favicon.svg',
+    shortcut: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({
