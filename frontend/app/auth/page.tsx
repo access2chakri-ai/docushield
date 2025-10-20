@@ -127,14 +127,11 @@ export default function AuthPage() {
           {/* Header */}
           <div className="text-center mb-8">
             <Link href="/" className="inline-block hover:opacity-80 transition-opacity duration-200">
-              <div className="flex items-center justify-center space-x-3 mb-2">
-                <img 
-                  src="/docushield-logo-svg.svg" 
-                  alt="DocuShield Logo" 
-                  className="h-8 w-auto"
-                />
-                <h1 className="text-3xl font-bold text-gray-900 cursor-pointer">DocuShield</h1>
-              </div>
+              <img 
+                src="/docushield-logo-svg.svg" 
+                alt="DocuShield Logo" 
+                className="h-12 w-auto mb-2"
+              />
             </Link>
             <p className="text-gray-600">
               {isLogin ? 'Welcome back!' : 'Create your account'}
