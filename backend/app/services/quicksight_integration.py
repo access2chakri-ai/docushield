@@ -19,12 +19,20 @@ class QuickSightService:
         self.quicksight_client = boto3.client('quicksight', region_name='us-east-1')
         self.account_id = os.getenv('AWS_ACCOUNT_ID', '192933326034')
         self.region = 'us-east-1'
-        self.allowed_domains = [
+        
+        # Dynamic allowed domains - include all possible frontend domains
+        base_domains = [
             'http://localhost:3000',
             'https://main.d2be5wdxfumfls.amplifyapp.com',
-            'https://docushield.poweropsusa.com',
             'https://poweropsusa.com'
         ]
+        
+        # Add any additional domains from environment
+        additional_domains = os.getenv('QUICKSIGHT_ALLOWED_DOMAINS', '').split(',')
+        additional_domains = [domain.strip() for domain in additional_domains if domain.strip()]
+        
+        self.allowed_domains = base_domains + additional_domains
+        logger.info(f"🔐 QuickSight allowed domains: {self.allowed_domains}")
         
     def get_embed_url_for_registered_user(self, dashboard_id: str, user_arn: str) -> Optional[str]:
         """Generate embed URL for registered QuickSight user"""
@@ -51,6 +59,10 @@ class QuickSightService:
         """Generate embed URL for QuickSight dashboard with user-specific data filtering"""
         
         try:
+            logger.info(f"🔗 Generating embed URL for dashboard {dashboard_id}, user {user_id}")
+            logger.info(f"🔐 Using allowed domains: {self.allowed_domains}")
+            logger.info(f"🏢 Account ID: {self.account_id}, Region: {self.region}")
+            
             # Simplified anonymous embedding without problematic parameters
             response = self.quicksight_client.generate_embed_url_for_anonymous_user(
                 AwsAccountId=self.account_id,
@@ -97,12 +109,37 @@ class QuickSightService:
                 embed_url += f"?{'&'.join(params)}"
             
             logger.info(f"✅ Generated embed URL for user {user_id}, dashboard {dashboard_id}")
+            logger.info(f"🔗 URL domain: {embed_url.split('/')[2] if '://' in embed_url else 'unknown'}")
             return embed_url
             
         except Exception as e:
-            logger.error(f"Failed to generate embed URL for dashboard {dashboard_id}: {e}")
+            error_message = str(e)
+            logger.error(f"❌ Failed to generate embed URL for dashboard {dashboard_id}: {error_message}")
+            logger.error(f"🔍 Error type: {type(e).__name__}")
+            logger.error(f"🏢 Account ID: {self.account_id}")
+            logger.error(f"🌍 Region: {self.region}")
+            logger.error(f"🔐 Allowed domains: {self.allowed_domains}")
             
-            # Return a fallback URL or None
+            # Check for common error types and provide helpful messages
+            if 'UnsupportedPricingPlanException' in error_message:
+                logger.error("💰 QuickSight Standard Edition detected - embedding requires Enterprise Edition")
+                return None
+            elif 'AccessDeniedException' in error_message:
+                logger.error("🚫 Access denied - check QuickSight permissions and dashboard sharing")
+                return None
+            elif 'ResourceNotFoundException' in error_message:
+                logger.error(f"📊 Dashboard {dashboard_id} not found - check dashboard ID")
+                return None
+            elif 'InvalidParameterValueException' in error_message:
+                if 'AllowedDomains' in error_message:
+                    logger.error(f"🌐 Domain validation failed - check if custom domain is in allowed list")
+                    logger.error(f"🔍 Current allowed domains: {self.allowed_domains}")
+                return None
+            
+            # Log the full exception for debugging
+            import traceback
+            logger.error(f"📋 Full traceback: {traceback.format_exc()}")
+            
             return None
     
     async def _try_registered_user_embedding_with_rls(self, dashboard_id: str, user_id: str) -> Optional[str]:
