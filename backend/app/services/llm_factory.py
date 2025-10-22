@@ -144,7 +144,8 @@ class LLMFactory:
                 "analysis": ["amazon.nova-lite-v1:0"],
                 "summarization": ["amazon.nova-lite-v1:0"],
                 "classification": ["amazon.nova-lite-v1:0"],
-                "embedding": ["amazon.titan-embed-text-v2:0"]
+                "embedding": ["amazon.titan-embed-text-v2:0"],
+                "image_generation": ["amazon.titan-image-generator-v2:0"]
             }
         }
         
@@ -154,7 +155,13 @@ class LLMFactory:
             LLMProvider.ANTHROPIC: {"claude-opus-4-20250514": 0.015, "claude-sonnet-4-20250514": 0.003, "claude-3-5-haiku-20241022": 0.00025},
             LLMProvider.GEMINI: {"gemini-pro": 0.001},
             LLMProvider.GROQ: {"mixtral-8x7b-32768": 0.0006, "llama2-70b-4096": 0.0008},
-            LLMProvider.BEDROCK: {"amazon.nova-lite-v1:0": 0.0006, "amazon.nova-micro-v1:0": 0.00035, "amazon.titan-embed-text-v2:0": 0.0001}
+            LLMProvider.BEDROCK: {
+                "amazon.nova-lite-v1:0": 0.0006, 
+                "amazon.nova-micro-v1:0": 0.00035, 
+                "amazon.titan-embed-text-v2:0": 0.0001,
+                "stability.stable-diffusion-xl-v1": 0.04,  # Per image
+                "amazon.titan-image-generator-v2:0": 0.008   # Per image (Titan G1 V2) - varies by size
+            }
         }
     
     def _initialize_providers(self):
@@ -394,14 +401,14 @@ class LLMFactory:
         """
         start_time = time.time()
         
-        # Use preferred provider or default to Gemini
-        provider = preferred_provider or LLMProvider.GEMINI
+        # Use preferred provider or default to Bedrock (same as agents)
+        provider = preferred_provider or LLMProvider.BEDROCK
         
-        # Use only Gemini for image generation
-        available_providers = [LLMProvider.GEMINI]
+        # Supported image generation providers
+        available_providers = [LLMProvider.BEDROCK, LLMProvider.GEMINI, LLMProvider.OPENAI]
         if provider not in available_providers:
-            provider = LLMProvider.GEMINI
-            logger.warning(f"Image generation not supported for {preferred_provider.value if preferred_provider else 'None'}, using Gemini")
+            provider = LLMProvider.BEDROCK
+            logger.warning(f"Image generation not supported for {preferred_provider.value if preferred_provider else 'None'}, using Bedrock")
         
         # Check if selected provider is available
         provider_available = False
@@ -414,19 +421,29 @@ class LLMFactory:
                 provider_available = bool(status)
         
         if not provider_available:
-            # Force Gemini to be available for image generation
-            logger.info("Forcing Gemini provider for image generation")
-            provider = LLMProvider.GEMINI
+            # Try fallback providers in order: Bedrock -> Gemini -> OpenAI
+            fallback_providers = [LLMProvider.BEDROCK, LLMProvider.GEMINI, LLMProvider.OPENAI]
+            for fallback in fallback_providers:
+                if fallback in self.provider_status and self.provider_status[fallback]:
+                    provider = fallback
+                    logger.info(f"Using fallback provider {provider.value} for image generation")
+                    break
+            else:
+                raise Exception("No image generation providers available")
         
         # Select model
         model = await self._select_model(provider, LLMTask.IMAGE_GENERATION)
         
         try:
-            # Generate image using ONLY Gemini
-            if provider != LLMProvider.GEMINI:
-                raise Exception(f"Only Gemini image generation is supported, got: {provider.value}")
-                
-            result = await self._gemini_image_generation(prompt, model, size, quality, style)
+            # Generate image using the selected provider
+            if provider == LLMProvider.BEDROCK:
+                result = await self._bedrock_image_generation(prompt, model, size, quality, style)
+            elif provider == LLMProvider.GEMINI:
+                result = await self._gemini_image_generation(prompt, model, size, quality, style)
+            elif provider == LLMProvider.OPENAI:
+                result = await self._openai_image_generation(prompt, model, size, quality, style)
+            else:
+                raise Exception(f"Unsupported image generation provider: {provider.value}")
             
             if not result.get("success"):
                 logger.error(f"Gemini image generation failed: {result.get('error')}")
@@ -441,7 +458,6 @@ class LLMFactory:
                 provider=provider,
                 model=model,
                 call_type="image_generation",
-                estimated_cost=result["estimated_cost"],
                 latency_ms=latency,
                 success=True,
                 purpose="profile_photo_generation",
@@ -992,6 +1008,129 @@ class LLMFactory:
                 "prompt": prompt,
                 "model": model,
                 "provider": "gemini",
+                "estimated_cost": 0.0
+            }
+
+    async def _bedrock_image_generation(self, prompt: str, model: str, size: str = "1024x1024", quality: str = "standard", style: str = "vivid") -> Dict[str, Any]:
+        """Generate image using Amazon Bedrock Titan Image Generator G1 V2 - Optimized for profile photos"""
+        if not BEDROCK_AVAILABLE:
+            raise Exception("boto3 package not available - install with: pip install boto3")
+        
+        try:
+            client = self.providers[LLMProvider.BEDROCK]
+            
+            print(f"🎨 Titan Image Generator G1 V2 profile photo generation - Size: {size}")
+            
+            # Amazon Titan Image Generator G1 V2 - Optimized for speed
+            width, height = map(int, size.split('x'))
+            
+            # Use the user's prompt directly, with minimal enhancement for profile photos
+            if "professional" not in prompt.lower() and "headshot" not in prompt.lower():
+                # Only enhance if user didn't specify professional terms
+                enhanced_prompt = f"Professional headshot portrait, {prompt}, high quality, clean background"
+            else:
+                # Use user's prompt as-is if they already specified professional terms
+                enhanced_prompt = f"{prompt}, high quality, clean background"
+            
+            # Ensure prompt doesn't exceed 512 character limit
+            if len(enhanced_prompt) > 512:
+                enhanced_prompt = enhanced_prompt[:509] + "..."
+            
+            print(f"📝 Original prompt: {prompt}")
+            print(f"📝 Enhanced prompt: {enhanced_prompt}")
+            
+            body = json.dumps({
+                "taskType": "TEXT_IMAGE",
+                "textToImageParams": {
+                    "text": enhanced_prompt,
+                    "negativeText": "blurry, low quality, distorted, cartoon, anime, multiple people"  # Keep under 512 chars
+                },
+                "imageGenerationConfig": {
+                    "quality": quality,  # "standard" or "premium" 
+                    "numberOfImages": 1,
+                    "height": height,
+                    "width": width,
+                    "cfgScale": 8.0,  # Default value per documentation
+                    "seed": random.randint(1, 2147483647)  # Random seed for unique images
+                }
+            })
+            
+            print(f"🚀 Generating with Titan G1 V2: {enhanced_prompt[:100]}...")
+            
+            # Set timeout for 25 seconds to allow 5 seconds buffer
+            response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    client.invoke_model,
+                    modelId=model,
+                    body=body,
+                    contentType="application/json",
+                    accept="application/json"
+                ),
+                timeout=25.0
+            )
+            
+            response_body = json.loads(response['body'].read())
+            
+            # Check for errors first
+            if response_body.get('error'):
+                raise Exception(f"Titan V2 API error: {response_body['error']}")
+            
+            if response_body.get('images') and len(response_body['images']) > 0:
+                image_data = base64.b64decode(response_body['images'][0])
+                
+                print(f"✅ Titan G1 V2 generation successful - Image size: {len(image_data)} bytes")
+                
+                # Calculate cost based on image dimensions (per AWS documentation)
+                total_pixels = width * height
+                if total_pixels <= 512 * 512:
+                    estimated_cost = 0.004  # Lower cost for smaller images
+                else:
+                    estimated_cost = 0.008  # Standard cost for larger images
+                
+                # Premium quality costs more
+                if quality == "premium":
+                    estimated_cost *= 1.5
+                
+                return {
+                    "success": True,
+                    "image_data": image_data,
+                    "mime_type": "image/png",
+                    "prompt": prompt,
+                    "model": "Titan Image Generator G1 V2",
+                    "provider": "AWS Bedrock",
+                    "size": size,
+                    "quality": quality,
+                    "style": style,
+                    "estimated_cost": estimated_cost
+                }
+            else:
+                raise Exception("No image generated in Titan G1 V2 response")
+                
+        except asyncio.TimeoutError:
+            print(f"⏰ Titan G1 V2 generation timed out after 25 seconds")
+            return {
+                "success": False,
+                "error": "Image generation timed out. Please try again with a simpler prompt.",
+                "image_data": None,
+                "mime_type": None,
+                "prompt": prompt,
+                "model": model,
+                "provider": "bedrock",
+                "estimated_cost": 0.0
+            }
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"Titan G1 V2 image generation failed: {str(e)}")
+            print(f"Titan G1 V2 error details: {error_details}")
+            return {
+                "success": False,
+                "error": f"Titan G1 V2 image generation failed: {str(e)}",
+                "image_data": None,
+                "mime_type": None,
+                "prompt": prompt,
+                "model": model,
+                "provider": "bedrock",
                 "estimated_cost": 0.0
             }
     

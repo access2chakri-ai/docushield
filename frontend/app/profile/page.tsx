@@ -34,6 +34,7 @@ export default function ProfilePage() {
   // Photo generation states
   const [photoPrompt, setPhotoPrompt] = useState('');
   const [generatingPhoto, setGeneratingPhoto] = useState(false);
+  const [generatingBasicPhoto, setGeneratingBasicPhoto] = useState(false);
   const [photoSize, setPhotoSize] = useState('1024x1024');
   const [photoQuality, setPhotoQuality] = useState('standard');
   const [photoStyle, setPhotoStyle] = useState('vivid');
@@ -159,6 +160,49 @@ export default function ProfilePage() {
     }
   };
 
+  const handleGenerateBasicPhoto = async () => {
+    setGeneratingBasicPhoto(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const response = await authenticatedFetch(`${config.apiBaseUrl}/api/profile/generate-basic-photo`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }, 30000); // 30 second timeout
+
+      if (response.ok) {
+        const photoData: ProfilePhotoResponse = await response.json();
+        
+        // Update user state with new photo (add cache-busting timestamp)
+        const cacheBustingUrl = `${photoData.image_url}?t=${Date.now()}`;
+        const updatedUser = { ...user!, profile_photo_url: cacheBustingUrl, profile_photo_prompt: photoData.prompt };
+        setUser(updatedUser);
+        
+        // Update localStorage
+        localStorage.setItem('docushield_user', JSON.stringify(updatedUser));
+        
+        setSuccess(`Professional photo generated successfully!`);
+        
+        // Trigger auth state change event to update all components
+        window.dispatchEvent(new Event('auth-change'));
+      } else {
+        const errorData = await response.json();
+        setError(errorData.detail || 'Professional photo generation failed');
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('timed out')) {
+        setError('Photo generation timed out after 30 seconds. Please try again.');
+      } else {
+        setError('Failed to generate professional profile photo');
+      }
+    } finally {
+      setGeneratingBasicPhoto(false);
+    }
+  };
+
   const handleGeneratePhoto = async (e: React.FormEvent) => {
     e.preventDefault();
     setGeneratingPhoto(true);
@@ -166,7 +210,13 @@ export default function ProfilePage() {
     setSuccess(null);
 
     if (!photoPrompt.trim()) {
-      setError('Please enter a prompt for your profile photo');
+      setError('Please enter a description for your profile photo');
+      setGeneratingPhoto(false);
+      return;
+    }
+
+    if (photoPrompt.length > 400) {
+      setError('Description is too long. Please keep it under 400 characters.');
       setGeneratingPhoto(false);
       return;
     }
@@ -183,29 +233,33 @@ export default function ProfilePage() {
           quality: photoQuality,
           style: photoStyle,
         }),
-      }, 60000); // 60 second timeout for image generation
+      }, 30000); // 30 second timeout for Titan G1
 
       if (response.ok) {
         const photoData: ProfilePhotoResponse = await response.json();
         
-        // Update user state with new photo
-        const updatedUser = { ...user!, profile_photo_url: photoData.image_url, profile_photo_prompt: photoPrompt };
+        // Update user state with new photo (add cache-busting timestamp)
+        const cacheBustingUrl = `${photoData.image_url}?t=${Date.now()}`;
+        const updatedUser = { ...user!, profile_photo_url: cacheBustingUrl, profile_photo_prompt: photoPrompt };
         setUser(updatedUser);
         
         // Update localStorage
         localStorage.setItem('docushield_user', JSON.stringify(updatedUser));
         
-        setSuccess(`Profile photo generated successfully! (Cost: $${photoData.estimated_cost.toFixed(3)})`);
+        setSuccess(`Profile photo generated successfully!`);
         setPhotoPrompt('');
+        
+        // Trigger auth state change event to update all components
+        window.dispatchEvent(new Event('auth-change'));
       } else {
         const errorData = await response.json();
         setError(errorData.detail || 'Photo generation failed');
       }
     } catch (err) {
       if (err instanceof Error && err.message.includes('timed out')) {
-        setError('Photo generation timed out. Please try again with a simpler prompt.');
+        setError('Photo generation timed out after 30 seconds. Please try again with a simpler description.');
       } else {
-        setError('Failed to generate profile photo');
+        setError('Failed to generate custom profile photo');
       }
     } finally {
       setGeneratingPhoto(false);
@@ -279,6 +333,7 @@ export default function ProfilePage() {
                   {user?.profile_photo_url ? (
                     <div className="relative inline-block">
                       <img
+                        key={user.profile_photo_url} // Force re-render when URL changes
                         src={user.profile_photo_url}
                         alt="Profile"
                         className="w-32 h-32 rounded-full object-cover border-4 border-indigo-100"
@@ -297,26 +352,67 @@ export default function ProfilePage() {
                     </div>
                   )}
                   
-                  {user?.profile_photo_prompt && (
-                    <p className="text-sm text-gray-500 mt-2">
-                      Generated from: "{user.profile_photo_prompt}"
-                    </p>
-                  )}
+
                 </div>
 
-                {/* Generate Photo Form */}
-                <form onSubmit={handleGeneratePhoto} className="space-y-4">
+                {/* Quick Professional Photo Generation */}
+                <div className="mb-6">
+                  <button
+                    onClick={handleGenerateBasicPhoto}
+                    disabled={generatingBasicPhoto || generatingPhoto}
+                    className="w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {generatingBasicPhoto ? (
+                      <div className="flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        We are processing your request, please wait...
+                      </div>
+                    ) : (
+                      <span className="flex items-center justify-center">
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Generate Photo
+                      </span>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-2 text-center">
+                    ⚡ Quick professional headshot - No description needed!
+                  </p>
+                </div>
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-300" />
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-2 bg-white text-gray-500">or describe your ideal photo</span>
+                  </div>
+                </div>
+
+                {/* Custom Photo Generation Form */}
+                <form onSubmit={handleGeneratePhoto} className="space-y-4 mt-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Photo Prompt
+                      Describe Your Ideal Photo
                     </label>
                     <input
                       type="text"
                       value={photoPrompt}
                       onChange={(e) => setPhotoPrompt(e.target.value)}
-                      placeholder="e.g., professional business person, smiling, casual attire"
+                      placeholder="Describe yourself: 'professional business person with glasses' or 'creative designer with modern style'"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                      disabled={generatingPhoto || generatingBasicPhoto}
+                      maxLength={400}
                     />
+                    <div className="flex justify-between items-center mt-1">
+                      <p className="text-xs text-gray-500">
+                        💡 Be specific! Include profession, style, accessories, or mood for better results.
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {photoPrompt.length}/400
+                      </p>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -366,18 +462,29 @@ export default function ProfilePage() {
 
                   <button
                     type="submit"
-                    disabled={generatingPhoto}
+                    disabled={generatingPhoto || generatingBasicPhoto}
                     className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     {generatingPhoto ? (
                       <div className="flex items-center justify-center">
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Generating...
+                        We are processing your request, please wait...
                       </div>
                     ) : (
-                      'Generate AI Photo'
+                      <span className="flex items-center justify-center">
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        Create My Photo
+                      </span>
                     )}
                   </button>
+                  
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+                    <p className="text-xs text-blue-800">
+                      🤖 <strong>AI-Generated Photos:</strong> Create professional profile photos instantly. Choose quick generation or describe your ideal photo for personalized results!
+                    </p>
+                  </div>
                 </form>
               </div>
             </div>

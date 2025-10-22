@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '../../utils/auth';
 import { config } from '../../utils/config';
 import DocumentTypeFilter from '../components/DocumentTypeFilter';
+import ProgressIndicator from '../components/ProgressIndicator';
 
 
 interface Message {
@@ -250,6 +251,8 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen bg-chat-pattern relative overflow-hidden">
+      {/* AI Thinking Background Overlay */}
+      {isLoading && <div className="ai-thinking-overlay"></div>}
       {/* Floating chat elements */}
       <div className="floating-document top-20 left-10 text-6xl">💬</div>
       <div className="floating-document top-36 right-8 text-5xl">🤖</div>
@@ -259,18 +262,27 @@ export default function ChatPage() {
       {/* AI processing flow */}
       <div className="data-flow top-0 left-1/5" style={{animationDelay: '1s'}}></div>
       <div className="data-flow top-0 right-1/5" style={{animationDelay: '3s'}}></div>
+
+      {/* AI Processing Animation */}
+      {isLoading && (
+        <div className="loading-overlay">
+          <div className="shimmer-effect shimmer-purple"></div>
+        </div>
+      )}
       
       <div className="container mx-auto px-4 py-8 max-w-4xl relative z-10">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">AI Document Chat</h1>
+            <h1 className="text-3xl font-bold text-gray-900">
+              💬 Chat with Your Documents
+            </h1>
             <p className="text-gray-600">
               {selectedDocument && selectedDocumentName
-                ? `Chatting about: ${selectedDocumentName}` 
-                : `Ask questions about your uploaded documents`}
+                ? `Having a conversation about: ${selectedDocumentName}` 
+                : `Ask me anything about your documents - I'll find the answers for you`}
             </p>
             {user && (
-              <p className="text-sm text-gray-500">Logged in as: {user.name}</p>
+              <p className="text-sm text-gray-500">Chatting as: {user.name}</p>
             )}
           </div>
           <div className="flex space-x-4">
@@ -351,13 +363,13 @@ export default function ChatPage() {
             
             <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded">
               {chatMode === 'documents' && (
-                <span>📄 <strong>Document Mode:</strong> Ask questions about a specific selected document. Select a document below.</span>
+                <span>📄 <strong>Single Document:</strong> Focus on one specific document. Pick one below to get started.</span>
               )}
               {chatMode === 'all_documents' && (
-                <span>📚 <strong>All Documents:</strong> Search and analyze across all your uploaded documents at once.</span>
+                <span>📚 <strong>All Documents:</strong> I'll search through everything you've uploaded to find answers.</span>
               )}
               {chatMode === 'general' && (
-                <span>🌐 <strong>General Mode:</strong> Ask any question including stock prices, news, general knowledge, etc.</span>
+                <span>🌐 <strong>General Questions:</strong> Ask me about anything - current events, stock prices, general knowledge.</span>
               )}
             </div>
           </div>
@@ -368,7 +380,7 @@ export default function ChatPage() {
           <div className="bg-white rounded-lg shadow-lg p-4 mb-6">
             <div className="flex items-center space-x-4">
               <label className="text-sm font-medium text-gray-700">
-                📄 Select Document:
+                📄 Which document should we talk about?
               </label>
               <select
                 value={selectedDocument || ''}
@@ -376,7 +388,7 @@ export default function ChatPage() {
                 className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 disabled={isLoading}
               >
-                <option value="">Choose a document...</option>
+                <option value="">Pick a document to chat about...</option>
                 {availableDocuments.map((doc) => (
                   <option key={doc.contract_id} value={doc.contract_id}>
                     {doc.filename} ({new Date(doc.created_at).toLocaleDateString()})
@@ -386,9 +398,9 @@ export default function ChatPage() {
               {selectedDocument && (
                 <Link
                   href={`/search`}
-                  className="px-3 py-2 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200"
+                  className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
                 >
-                  🔍 Advanced Search
+                  🔍 Search Instead
                 </Link>
               )}
             </div>
@@ -465,7 +477,7 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Ask a question about your documents..."
+                placeholder="What would you like to know? Ask me anything about your documents..."
                 className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 rows={2}
                 disabled={isLoading}
@@ -479,7 +491,22 @@ export default function ChatPage() {
                     : 'bg-blue-600 hover:bg-blue-700'
                 } text-white`}
               >
-                {isLoading ? '⏳' : 'Send'}
+                {isLoading ? (
+                  <span className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Thinking...
+                  </span>
+                ) : (
+                  <span className="flex items-center">
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                    Ask
+                  </span>
+                )}
               </button>
             </div>
             
@@ -497,10 +524,16 @@ export default function ChatPage() {
           </div>
         </div>
 
+        {/* Progress Indicator */}
+        <ProgressIndicator
+          isVisible={isLoading}
+          operation="chatting"
+        />
+
         <div className="mt-6 bg-blue-50 rounded-lg p-4">
-          <h3 className="font-semibold mb-2">🔄 Multi-Step Process</h3>
+          <h3 className="font-semibold mb-2">🤖 How I Work</h3>
           <p className="text-sm text-gray-700">
-            Each question triggers: Vector Search → Document Retrieval → LLM Analysis → External Enrichment → Final Synthesis
+            When you ask a question, I search through your documents, analyze the content, and give you a helpful answer with sources.
           </p>
         </div>
       </div>
