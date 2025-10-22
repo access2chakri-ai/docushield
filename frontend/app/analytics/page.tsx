@@ -155,12 +155,18 @@ export default function AnalyticsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen relative" style={{
+      <div className="min-h-screen relative overflow-hidden" style={{
         backgroundImage: 'url(/backgrounds/analytics-bg.svg)',
         backgroundSize: 'cover',
         backgroundPosition: 'center'
       }}>
         <div className="absolute inset-0 bg-white/80 backdrop-blur-sm"></div>
+        
+        {/* Analytics Loading Animation */}
+        <div className="loading-overlay">
+          <div className="shimmer-effect shimmer-purple"></div>
+        </div>
+        
         <div className="relative z-10 flex items-center justify-center min-h-screen">
           <div className="text-center bg-white/90 backdrop-blur-md rounded-2xl p-12 shadow-xl border border-white/20">
             <div className="relative mb-8">

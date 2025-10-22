@@ -14,6 +14,7 @@ from app.core.dependencies import get_current_active_user
 from app.schemas.requests import UpdateProfileRequest, ChangePasswordRequest, GenerateProfilePhotoRequest
 from app.schemas.responses import UserResponse, ProfilePhotoResponse
 from app.services.privacy_safe_llm import privacy_safe_llm
+from app.services.llm_factory import LLMProvider
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
@@ -95,41 +96,149 @@ async def change_password(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Password change failed: {str(e)}")
 
+@router.post("/generate-basic-photo", response_model=ProfilePhotoResponse)
+async def generate_basic_profile_photo(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_operational_db)
+):
+    """Generate a basic professional profile photo using Titan G1"""
+    try:
+        # Generate a professional profile photo with optimized prompt (under 512 chars)
+        import random
+        
+        # Add some variation to basic photos
+        variations = [
+            "professional business person, confident smile, modern suit, clean white background, corporate headshot",
+            "professional executive, friendly expression, business attire, neutral gray background, office portrait",
+            "business professional, approachable demeanor, formal clothing, studio lighting, corporate photo",
+            "professional worker, warm smile, contemporary business wear, simple background, headshot portrait"
+        ]
+        
+        basic_prompt = random.choice(variations)
+        
+        print(f"🎯 Professional profile photo generation for user: {current_user.email}")
+        print(f"   Using Titan Image Generator G1 V2 with professional prompt")
+        
+        # Use Bedrock Titan G1 V2 only
+        print(f"🔄 Using AWS Bedrock Titan Image Generator G1 V2...")
+        
+        try:
+            result = await privacy_safe_llm.safe_generate_image(
+                prompt=basic_prompt,
+                size="512x512",  # Smaller size for faster generation
+                quality="standard",
+                style="natural",
+                contract_id=None,
+                preferred_provider=LLMProvider.BEDROCK
+            )
+            
+            print(f"📊 Titan G1 V2 professional photo result: {result.get('success')}")
+            
+        except Exception as generation_error:
+            print(f"❌ Titan G1 basic generation failed: {str(generation_error)}")
+            result = {
+                "success": False,
+                "error": f"Basic profile photo generation failed: {str(generation_error)}"
+            }
+        
+        if not result or not result.get("success"):
+            error_msg = result.get("error", "Professional profile photo generation failed") if result else "Titan G1 V2 not available"
+            print(f"❌ Professional photo error: {error_msg}")
+            raise HTTPException(
+                status_code=500,
+                detail="Could not generate professional profile photo. Please try the custom photo option or try again later."
+            )
+        
+        # Store image data in database
+        if result.get("image_data"):
+            current_user.profile_photo_data = result["image_data"]
+            current_user.profile_photo_mime_type = result.get("mime_type", "image/png")
+            current_user.profile_photo_url = f"/api/profile/photo/{current_user.user_id}"
+        else:
+            current_user.profile_photo_url = result.get("image_url")
+            
+        current_user.profile_photo_prompt = "Professional headshot"
+        await db.commit()
+        
+        return ProfilePhotoResponse(
+            success=True,
+            image_url=current_user.profile_photo_url,
+            prompt="Professional headshot",
+            model=result["model"],
+            provider=result["provider"],
+            estimated_cost=result["estimated_cost"]
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Professional profile photo generation error: {error_details}")
+        raise HTTPException(status_code=500, detail=f"Professional profile photo generation failed: {str(e)}")
+
 @router.post("/generate-photo", response_model=ProfilePhotoResponse)
 async def generate_profile_photo(
     request: GenerateProfilePhotoRequest,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_operational_db)
 ):
-    """Generate a profile photo using AI image generation"""
+    """Generate a custom profile photo using AI image generation with Titan G1"""
     try:
-        # Enhance the prompt for better profile photos
-        enhanced_prompt = f"Professional headshot portrait of a person, {request.prompt}, high quality, studio lighting, clean background, professional appearance"
+        # Validate prompt length (Titan G1 V2 has 512 character limit)
+        if len(request.prompt) > 400:  # Leave room for enhancement
+            raise HTTPException(
+                status_code=400,
+                detail="Photo description is too long. Please keep it under 400 characters."
+            )
         
-        # Generate image using LLM Factory (Try Gemini first, fallback to OpenAI)
-        from app.services.llm_factory import LLMProvider
+        # Generate image using LLM Factory with better error handling
         
-        print(f"🎯 Profile photo generation request:")
-        print(f"   Prompt: {request.prompt}")
+        print(f"🎯 Custom profile photo generation request:")
+        print(f"   User: {current_user.email}")
+        print(f"   User's Description: {request.prompt}")
         print(f"   Size: {request.size}")
         print(f"   Quality: {request.quality}")
         print(f"   Style: {request.style}")
+        print(f"   Using Titan Image Generator G1 V2 (same AI infrastructure as document agents)")
         
-        result = await privacy_safe_llm.safe_generate_image(
-            prompt=enhanced_prompt,
-            size=request.size,
-            quality=request.quality,
-            style=request.style,
-            contract_id=None,  # Not associated with a contract
-            preferred_provider=LLMProvider.GEMINI  # Use ONLY Gemini for image generation
-        )
+        # Use only Bedrock Titan G1 for profile photos
+        print(f"🔄 Using AWS Bedrock Titan Image Generator G1 V2...")
         
-        print(f"📊 Generation result: {result.get('success')} - Provider: {result.get('provider')} - Error: {result.get('error')}")
+        try:
+            result = await privacy_safe_llm.safe_generate_image(
+                prompt=request.prompt,  # Use user's original prompt
+                size=request.size,
+                quality=request.quality,
+                style=request.style,
+                contract_id=None,  # Not associated with a contract
+                preferred_provider=LLMProvider.BEDROCK
+            )
+            
+            print(f"📊 Titan G1 result: {result.get('success')} - Error: {result.get('error')}")
+            
+        except Exception as generation_error:
+            print(f"❌ Titan G1 generation failed: {str(generation_error)}")
+            result = {
+                "success": False,
+                "error": f"Profile photo generation failed: {str(generation_error)}"
+            }
         
-        if not result.get("success"):
+        if not result or not result.get("success"):
+            error_msg = result.get("error", "All image generation providers failed") if result else "No image generation providers available"
+            print(f"❌ Final error: {error_msg}")
+            
+            # Provide helpful error message based on the error type
+            if "bedrock" in error_msg.lower():
+                detail_msg = "AWS Bedrock image generation failed. Please ensure Bedrock is properly configured with Stability AI or Titan Image models."
+            elif "api key" in error_msg.lower():
+                detail_msg = "Image generation API keys are not configured. Please contact your administrator."
+            else:
+                detail_msg = f"Profile photo generation failed: {error_msg}. Please try again with a simpler prompt."
+                
             raise HTTPException(
                 status_code=500,
-                detail=result.get("error", "Image generation failed")
+                detail=detail_msg
             )
         
         # Store image data in database instead of URL

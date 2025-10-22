@@ -122,6 +122,7 @@ export default function UserMenu() {
       >
         {user.profile_photo_url ? (
           <img
+            key={user.profile_photo_url} // Force re-render when URL changes
             src={user.profile_photo_url}
             alt="Profile"
             className="w-8 h-8 rounded-full object-cover border-2 border-gray-200"
@@ -150,6 +151,7 @@ export default function UserMenu() {
               <div className="flex items-center space-x-3">
                 {user.profile_photo_url ? (
                   <img
+                    key={user.profile_photo_url} // Force re-render when URL changes
                     src={user.profile_photo_url}
                     alt="Profile"
                     className="w-10 h-10 rounded-full object-cover"
