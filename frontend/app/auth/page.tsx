@@ -349,30 +349,16 @@ export default function AuthPage() {
             </form>
           )}
 
-          {/* Demo Users */}
+          {/* Demo User */}
           <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-            <h4 className="text-sm font-medium text-blue-900 mb-2">Demo Users:</h4>
+            <h4 className="text-sm font-medium text-blue-900 mb-2">Demo User:</h4>
             <div className="space-y-1 text-xs text-blue-700">
-              <button
-                type="button"
-                onClick={() => setFormData({ email: 'john@company.com', name: 'John Doe', password: 'demo123' })}
-                className="block hover:underline"
-              >
-                • john@company.com (John Doe)
-              </button>
               <button
                 type="button"
                 onClick={() => setFormData({ email: 'sarah@company.com', name: 'Sarah Smith', password: 'demo123' })}
                 className="block hover:underline"
               >
                 • sarah@company.com (Sarah Smith)
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormData({ email: 'mike@company.com', name: 'Mike Johnson', password: 'demo123' })}
-                className="block hover:underline"
-              >
-                • mike@company.com (Mike Johnson)
               </button>
             </div>
           </div>

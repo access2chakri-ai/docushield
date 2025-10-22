@@ -74,7 +74,7 @@ export default function Navigation() {
             <img 
               src="/docushield-logo-svg.svg" 
               alt="DocuShield" 
-              className="h-8 w-auto hover:opacity-80 transition-opacity duration-200"
+              className="h-12 w-auto hover:opacity-80 transition-opacity duration-200"
             />
           </Link>
 
@@ -84,6 +84,12 @@ export default function Navigation() {
           <div className="hidden md:flex items-center space-x-8">
             {isLoggedIn ? (
               <>
+                <Link
+                  href="/about"
+                  className="text-gray-600 hover:text-blue-600 transition-colors duration-200 font-medium"
+                >
+                  About
+                </Link>
                 <Link
                   href="/dashboard"
                   className="text-gray-600 hover:text-blue-600 transition-colors duration-200 font-medium"
@@ -167,6 +173,13 @@ export default function Navigation() {
             <div className="px-2 pt-2 pb-3 space-y-1 bg-white border-t border-gray-200">
               {isLoggedIn ? (
                 <>
+                  <Link
+                    href="/about"
+                    className="block px-3 py-2 text-gray-600 hover:text-blue-600 transition-colors duration-200 font-medium"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    About
+                  </Link>
                   <Link
                     href="/dashboard"
                     className="block px-3 py-2 text-gray-600 hover:text-blue-600 transition-colors duration-200 font-medium"

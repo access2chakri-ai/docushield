@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { getUserData, isAuthenticated, authenticatedFetch, type User } from '../../utils/auth';
 import { config } from '../../utils/config';
 import DocumentTypeFilter from '../components/DocumentTypeFilter';
+import ProgressIndicator from '../components/ProgressIndicator';
 
 interface SearchResult {
   document_id: string;
@@ -213,17 +214,29 @@ export default function AdvancedSearchPage() {
       {/* Search processing flow */}
       <div className="data-flow top-0 left-1/4" style={{animationDelay: '0.5s'}}></div>
       <div className="data-flow top-0 right-1/6" style={{animationDelay: '2.5s'}}></div>
+
+      {/* Search Processing Animation */}
+      {isLoading && (
+        <div className="loading-overlay">
+          <div className="shimmer-effect shimmer-green"></div>
+        </div>
+      )}
       
       <div className="container mx-auto px-4 py-8 max-w-6xl relative z-10">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">🔍 Advanced Search</h1>
+            <h1 className="text-3xl font-bold text-gray-900 flex items-center">
+              🔍 Find What You Need
+              <svg className="w-8 h-8 ml-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </h1>
             <p className="text-gray-600">
-              Intelligent document search with semantic understanding and complex queries
+              Ask questions in plain English - we'll search through all your documents and find the answers
             </p>
             {user && (
-              <p className="text-sm text-gray-500">Logged in as: {user.name}</p>
+              <p className="text-sm text-gray-500">Searching through your documents as: {user.name}</p>
             )}
           </div>
           <div className="flex space-x-4">
@@ -254,7 +267,7 @@ export default function AdvancedSearchPage() {
             {/* Search Input */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search Query
+                What are you looking for?
               </label>
               <div className="flex space-x-4">
                 <input
@@ -262,7 +275,7 @@ export default function AdvancedSearchPage() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder="Try: 'Find contracts with auto-renewal clauses' or 'Show invoices above $50k missing PO reference'"
+                  placeholder="Ask anything: 'Find contracts with renewal clauses' or 'Show me invoices over $50k'"
                   className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   disabled={isLoading}
                 />
@@ -275,7 +288,22 @@ export default function AdvancedSearchPage() {
                       : 'bg-blue-600 hover:bg-blue-700'
                   } text-white`}
                 >
-                  {isLoading ? '🔍 Searching...' : '🔍 Search'}
+                  {isLoading ? (
+                    <span className="flex items-center">
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Searching...
+                    </span>
+                  ) : (
+                    <span className="flex items-center">
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      Search
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
@@ -284,7 +312,7 @@ export default function AdvancedSearchPage() {
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Search Type
+                  How should we search?
                 </label>
                 <select
                   value={searchType}
@@ -292,10 +320,10 @@ export default function AdvancedSearchPage() {
                   className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   disabled={isLoading}
                 >
-                  <option value="hybrid">Hybrid (Semantic + Keywords)</option>
-                  <option value="semantic">Semantic Search</option>
-                  <option value="keyword">Keyword Search</option>
-                  <option value="structured">Structured Query</option>
+                  <option value="hybrid">Smart Search (understands meaning + keywords)</option>
+                  <option value="semantic">Meaning-based Search</option>
+                  <option value="keyword">Exact Word Search</option>
+                  <option value="structured">Filter by Properties</option>
                 </select>
               </div>
 
@@ -492,25 +520,31 @@ export default function AdvancedSearchPage() {
           </div>
         )}
 
+        {/* Progress Indicator */}
+        <ProgressIndicator
+          isVisible={isLoading}
+          operation="searching"
+        />
+
         {/* Help Section */}
         <div className="mt-8 bg-blue-50 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-blue-900 mb-3">🚀 Advanced Search Tips</h3>
+          <h3 className="text-lg font-semibold text-blue-900 mb-3">🚀 Search Tips</h3>
           <div className="grid md:grid-cols-2 gap-4 text-sm text-blue-800">
             <div>
-              <h4 className="font-medium mb-2">Natural Language Queries:</h4>
+              <h4 className="font-medium mb-2">Try asking like this:</h4>
               <ul className="space-y-1 list-disc list-inside">
-                <li>"Find contracts with auto-renewal clauses"</li>
-                <li>"Show high risk liability agreements"</li>
-                <li>"Invoices above $50k missing PO reference"</li>
+                <li>"Find contracts that auto-renew"</li>
+                <li>"Show me high-risk agreements"</li>
+                <li>"Invoices over $50k without purchase orders"</li>
               </ul>
             </div>
             <div>
-              <h4 className="font-medium mb-2">Search Types:</h4>
+              <h4 className="font-medium mb-2">Search Options:</h4>
               <ul className="space-y-1 list-disc list-inside">
-                <li><strong>Hybrid:</strong> Combines semantic understanding with keywords</li>
-                <li><strong>Semantic:</strong> Understands meaning and context</li>
-                <li><strong>Keyword:</strong> Traditional text matching</li>
-                <li><strong>Structured:</strong> Filters by document properties</li>
+                <li><strong>Smart Search:</strong> Understands what you mean, not just exact words</li>
+                <li><strong>Meaning-based:</strong> Finds similar concepts and ideas</li>
+                <li><strong>Exact Words:</strong> Looks for specific terms you type</li>
+                <li><strong>Filter by Properties:</strong> Searches by document details</li>
               </ul>
             </div>
           </div>
