@@ -184,7 +184,7 @@ cp .env.example .env
 # Edit .env with your API keys and configuration
 
 # Start the backend server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python main.py
 ```
 
 ### 3️⃣ Frontend Setup
