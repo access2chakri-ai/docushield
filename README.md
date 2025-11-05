@@ -491,17 +491,6 @@ GET    /api/auth/profile              # User profile
 - **Audit Logging**: Comprehensive activity tracking
 - **GDPR Compliance**: Right to deletion and data portability
 
-### 🚨 Security Monitoring
-
-```mermaid
-graph LR
-    A[User Activity] --> B[Security Monitoring]
-    B --> C[Threat Detection]
-    B --> D[Audit Logging]
-    B --> E[Compliance Reporting]
-    C --> F[Automated Response]
-    D --> G[Security Analytics]
-```
 
 ## 📊 Analytics & Business Intelligence
 
